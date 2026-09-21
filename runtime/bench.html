@@ -125,6 +125,26 @@ const payload = transfers.reduce(
 results.__page_payload = payload;
 log(`page payload: ${payload.requests} requests, ${payload.bytes} bytes transferred`);
 
+const webnnFailed = Object.entries(results).some(([name, value]) => name.startsWith("webnn") && value.error);
+if (webnnFailed) {
+  log("");
+  log("-".repeat(76));
+  log("WebNN is off by default in every browser. To measure the NPU path yourself:");
+  log("");
+  log("  1. Install Chrome or Edge Canary - stable Chrome on macOS does not expose WebNN yet.");
+  log("  2. Open chrome://flags and enable all three:");
+  log("       * WebNN API");
+  log("       * Core ML backend for WebNN");
+  log("       * Instruct Core ML to use GPU or Neural Engine explicitly");
+  log("  3. Restart the browser, then reload this page.");
+  log("");
+  log("  Or launch it from a shell. Note that the flag's real feature name is not what");
+  log("  chrome://flags calls it - passing --enable-features=WebNN silently does nothing:");
+  log("       --enable-features=WebMachineLearningNeuralNetwork,WebNNCoreML");
+  log("");
+  log("The wasm and webgpu rows above work without any of this.");
+}
+
 window.__benchResults = results;
 window.__benchDone = true;
 log("\ndone");
