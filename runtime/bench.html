@@ -84,7 +84,10 @@ log(`shapes: context ${CTX}, options ${OPT} x ${OPTBYTES}`);
 const ort = await import(BUNDLE);
 ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
 log(`runtime bundle: ${BUNDLE.split("/").pop()}`);
-log(`WebNN api present (navigator.ml): ${"ml" in navigator}`);
+// Thread count is the usual reason two wasm numbers disagree across machines, so it is reported
+// rather than assumed.
+log(`wasm threads: ${ort.env.wasm.numThreads ?? "unset"} | crossOriginIsolated: ${globalThis.crossOriginIsolated}`);
+log(`webnn api present (navigator.ml): ${"ml" in navigator}`);
 
 for (const provider of PROVIDERS) {
   try {
