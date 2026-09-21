@@ -10,24 +10,26 @@ Usage: python probe_webnn.py
 from __future__ import annotations
 
 import json
+import os
 
 from playwright.sync_api import sync_playwright
 
+HEADLESS = os.environ.get("PROBE_HEADED") != "1"
+ONLY = os.environ.get("PROBE_ONLY", "")
+
+GPU_HELPERS = ["--ignore-gpu-blocklist", "--enable-gpu", "--disable-gpu-sandbox", "--use-angle=metal"]
 FLAG_SETS = {
     "none": [],
-    "WebNN": ["--enable-features=WebNN"],
-    "WebNN+blink": ["--enable-features=WebNN", "--enable-blink-features=WebNN"],
-    "WebNN+CoreML+blink": [
-        "--enable-features=WebNN,WebNNCoreML",
-        "--enable-blink-features=WebNN",
-    ],
-    "WebNN+unsafe-webgpu+blink": [
-        "--enable-features=WebNN",
-        "--enable-blink-features=WebNN",
-        "--enable-unsafe-webgpu",
-    ],
+    # The feature is registered as WebMachineLearningNeuralNetwork. "WebNN" is only the name of the
+    # flag in chrome://flags, which is why passing --enable-features=WebNN did nothing at all.
+    "correct": ["--enable-features=WebMachineLearningNeuralNetwork"],
+    "correct+coreml": ["--enable-features=WebMachineLearningNeuralNetwork,WebNNCoreML"],
+    "correct+coreml+gpu": ["--enable-features=WebMachineLearningNeuralNetwork,WebNNCoreML"] + GPU_HELPERS,
 }
-CHANNELS = [("bundled-chromium", None), ("chrome", "chrome")]
+CHANNELS = [
+    ("bundled-chromium", None),
+    ("chrome-canary", {"executable_path": "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary"}),
+]
 # Secure-context matters: WebGPU and WebNN are not exposed on about:blank, so the probe has to run
 # on a real origin. localhost counts as secure.
 PROBE_URL = "http://localhost:8766/"
@@ -61,9 +63,11 @@ def main() -> None:
     with sync_playwright() as playwright:
         for channel_name, channel in CHANNELS:
             for flag_name, flags in FLAG_SETS.items():
+                if ONLY and ONLY not in channel_name:
+                    continue
                 label = f"{channel_name}/{flag_name}"
                 try:
-                    browser = playwright.chromium.launch(channel=channel, args=flags, headless=True)
+                    browser = playwright.chromium.launch(args=flags, headless=HEADLESS, **(channel or {}))
                     page = browser.new_page()
                     page.goto(PROBE_URL)
                     report[label] = probe(page)
