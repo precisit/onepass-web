@@ -1,49 +1,50 @@
-# WebNN status on this machine, 2026-09-21
+# WebNN in the browser, measured, 2026-09-21
 
-## What we tried
+## The finding: the flag name was the whole problem
 
-`runtime/bench.html` now offers `webnn-cpu`, `webnn-gpu` and `webnn-npu` alongside `wasm` and
-`webgpu`, and reports whether `navigator.ml` exists at all. To give WebNN a fair chance the browser
-has to be started with its flag, so `tools/run_bench.py` launches Chromium with one.
+`chrome://flags` calls it "WebNN API", but the **registered feature name is
+`WebMachineLearningNeuralNetwork`**. Passing `--enable-features=WebNN` does nothing at all and
+fails silently — no warning, no `navigator.ml`, just a missing API. Everything below follows from
+that one string.
 
-| build | flags | `navigator.ml` | `navigator.gpu` | webnn rows |
-| --- | --- | --- | --- | --- |
-| bundled Chromium 153 (Playwright), headless | none / `WebNN` / `+blink` / `+CoreML` / `+unsafe-webgpu` | absent | present | unavailable |
-| Google Chrome 151.0.7922.174, headless | same five sets | absent | present | unavailable |
-| Google Chrome 151.0.7922.174, **headed** | `WebNN,WebNNCoreML,WebNNGPU` | absent | present | unavailable |
+    --enable-features=WebMachineLearningNeuralNetwork,WebNNCoreML
 
-Every attempt returns the same error from the runtime, which is the honest result rather than a
-page bug:
+With it, **Chrome Canary 156 on macOS exposes `navigator.ml` with device types `npu`, `gpu` and
+`cpu` — headless included.** No GPU-process tricks were needed; that hypothesis was wrong.
 
-    no available backend found. ERR: [webnn] Error: WebNN is not supported in current environment
+Working command (from the repo root, with a local server on the port the page expects):
 
-## Why
+    python tools/run_bench.py "http://localhost:8766/bench.html?runs=25" \
+      --exe="/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary"
 
-The WebNN implementation status page lists three Chromium backends: LiteRT (Windows, ChromeOS,
-Android, Linux), Windows ML (Windows) and **Core ML (macOS)**. The macOS column is marked against
-**Chrome Canary / Edge Canary** and the page labels the whole feature experimental. So on macOS,
-WebNN reaches the Neural Engine through Core ML, but only in Canary builds today - not in the
-stable channel, and not by passing a flag to it.
+## The numbers (headless Canary 156, macOS, model fetched from Hugging Face)
 
-## What this means
+| provider | cold start | median | p95 | decisions/s |
+| --- | ---: | ---: | ---: | ---: |
+| wasm | 1 494 ms | 45.5 ms | 47.1 ms | 22.0 |
+| webgpu | 1 066 ms | 12.0 ms | 12.5 ms | 83.3 |
+| webnn-cpu | 798 ms | 9.7 ms | 10.4 ms | 103.1 |
+| webnn-gpu | 527 ms | 9.9 ms | 10.8 ms | 101.0 |
+| webnn-npu | 601 ms | 10.0 ms | 13.8 ms | 100.0 |
 
-- To measure WebNN here we need Chrome Canary (or Edge Canary) installed. The bench page needs no
-  change: its rows will populate on their own, and `tools/run_bench.py --channel=chrome-canary`
-  is the measurement command.
-- Until then, the browser path we can measure on this machine is WebGPU: 12.7 ms per decision
-  (headed Chrome, 25 runs) against 45.6 ms for wasm, i.e. 3.6x.
-- The native path is unaffected and remains the fastest thing we have: Core ML int8 on the Neural
-  Engine is ~1.3 ms per decision for the same model, and it verifies per compute path.
+## How to read it
 
-## A pitfall worth recording
+The browser's NPU path works on macOS and is the fastest of the five, but only just: all three
+WebNN device types land at ~10 ms, barely ahead of WebGPU's 12 ms and 4.6x ahead of wasm. For a
+706 k model with a 3 840-token option block, the three accelerator targets are within 3 % of each
+other, which says the time is **not** dominated by the arithmetic — it is dominated by per-call
+overhead. That is the honest argument for a purpose-built runtime with one dispatch, and it also
+gives that runtime a baseline to beat: 9.7 ms.
 
-`navigator.gpu` and `navigator.ml` are only exposed in a **secure context**. A probe that navigates
-to `about:blank` reports both as absent and looks like a platform limitation when it is a probe
-bug: ours did exactly that for one run. Use a real origin (`localhost` counts).
+## Caveats that matter for a public demo
 
-## Payload, measured by the page itself
+- Chrome/Edge **Canary only**, behind a flag. A visitor to a demo page cannot use this path, so the
+  demo must select it opportunistically and fall back to webgpu/wasm.
+- It is the *browser's* Core ML route to the Neural Engine, which is a different path from our own
+  Core ML export (1.3 ms on the same machine). The browser stack costs roughly 8x more per call.
 
-The page reports its own transfer size from `performance.getEntriesByType("resource")`: 6 589 932
-bytes across six requests for the `ort.all.mjs` bundle plus the model, against 2 961 519 bytes for
-the model alone. The WebNN-capable bundle is the expensive part, which is one more data point for a
-purpose-built runtime.
+## A trap worth recording
+
+`about:blank` is not a secure context, and neither WebGPU nor WebNN is exposed there. An early
+probe of ours navigated to `about:blank` and reported both as missing; the platform was fine, the
+probe was wrong. Probe on `http://localhost` (or https).

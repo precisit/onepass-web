@@ -13,21 +13,33 @@ show one in use.
 | --- | --- |
 | Bench instrument (`runtime/bench.html`) | working, used for the numbers below |
 | ONNX Runtime Web path (wasm, webgpu) | measured, see table |
-| WebNN (the browser's route to the NPU) | offered in the bench; needs Chrome/Edge **Canary** on macOS, see `docs/webnn-status-2026-09-21.md` |
+| WebNN (the browser's route to the NPU) | **measured in Chrome Canary**: 9.7 ms median, the fastest of the five providers — but behind a flag, so demos must treat it as opportunistic. See `docs/webnn-status-2026-09-21.md` |
 | Custom WGSL runtime | planned, not started |
 | Game demo (`demo/c4/`) | blocked on the model being trained |
 
 ## What we measured (headless Chromium, M4; Swedish form specialist, 706 k params, 2.82 MB ONNX, 40 option slots x 96 bytes)
 
-| provider | cold start | median per decision | p95 | decisions/s |
+| provider | cold start | median | p95 | decisions/s |
 | --- | ---: | ---: | ---: | ---: |
-| wasm | 378 ms | 46.10 ms | 46.50 ms | 21.7 |
-| webgpu | 79 ms | **10.50 ms** | 11.50 ms | **95.2** |
+| wasm | 1 494 ms | 45.5 ms | 47.1 ms | 22.0 |
+| webgpu | 1 066 ms | 12.0 ms | 12.5 ms | 83.3 |
+| webnn-cpu | 798 ms | 9.7 ms | 10.4 ms | 103.1 |
+| webnn-gpu | 527 ms | 9.9 ms | 10.8 ms | 101.0 |
+| webnn-npu | 601 ms | 10.0 ms | 13.8 ms | 100.0 |
 
-WebGPU wins here by 4.4x, which is the opposite of the usual advice for small models. The reason
-is the input shape: the option block is 40 x 96 = 3 840 option tokens plus 224 context bytes, so
-the graph is parallel work, and that is what a GPU is for. "WASM beats WebGPU for small models" is
-the wrong question; the input shape decides.
+All three WebNN device types land within 3 % of each other, and barely ahead of WebGPU: for a model
+this small the cost is per-call overhead, not arithmetic. Chrome Canary 156, headless, macOS.
+
+The wasm result is the informative one: 45.5 ms against ~10-12 ms for every accelerator path, which
+is the opposite of the usual advice for small models. The reason is the input shape: the option block
+is 40 x 96 = 3 840 option tokens plus 224 context bytes, so the graph is parallel work, and that is
+what an accelerator is for. "WASM beats WebGPU for small models" is the wrong question; the input
+shape decides.
+
+Among the accelerators the spread is small - 9.7 to 12.0 ms, all within 25 % - so for this model the
+device type matters much less than the fact that *some* accelerator is used. At 3 840 tokens and
+706 k parameters the cost is dominated by per-call overhead, not arithmetic, which is exactly what a
+purpose-built runtime would remove.
 
 ## Why a custom runtime, if ONNX Runtime already works
 
