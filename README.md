@@ -12,7 +12,8 @@ show one in use.
 | Piece | State |
 | --- | --- |
 | Bench instrument (`runtime/bench.html`) | working, used for the numbers below |
-| ONNX Runtime Web path | measured, see table |
+| ONNX Runtime Web path (wasm, webgpu) | measured, see table |
+| WebNN (the browser's route to the NPU) | offered in the bench; needs Chrome/Edge **Canary** on macOS, see `docs/webnn-status-2026-09-21.md` |
 | Custom WGSL runtime | planned, not started |
 | Game demo (`demo/c4/`) | blocked on the model being trained |
 
@@ -45,6 +46,9 @@ for a turn-based game (10 ms per move is imperceptible).
 
     runtime/           the instrument, and later the kernels
       bench.html       measure cold start and per-decision latency for any one-pass ONNX model
+    tools/             how to reproduce a measurement the browser will not do on its own
+      run_bench.py     run the bench with a browser flag (WebNN) and print the results as JSON
+      probe_webnn.py   which build and flag combination exposes WebNN on this machine
     demo/              one folder per demo, each deployable as static files
     docs/              findings that belong to the runtime rather than to a demo
 

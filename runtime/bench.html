@@ -31,12 +31,23 @@ Model and shapes come from the query string, so it works for any specialist.</p>
 
 <script type="module">
 const ORT_VERSION = "1.30.0";
+// The `all` bundle is what carries the webnn execution provider, so it is what we load. It is
+// bigger than the webgpu-only bundle (5.9 MB against 677 kB) and the page reports what it actually
+// downloaded, so the cost of the option is visible rather than assumed.
+const BUNDLE = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/ort.all.mjs`;
 const q = new URLSearchParams(location.search);
 const MODEL = q.get("model") || "https://huggingface.co/precisit/one-pass-sv-forms/resolve/main/sv0-forms.onnx";
 const CTX = Number(q.get("ctx") || 224);
 const OPT = Number(q.get("opt") || 40);
 const OPTBYTES = Number(q.get("optbytes") || 96);
 const RUNS = Number(q.get("runs") || 60);
+const PROVIDERS = [
+  { label: "wasm", options: ["wasm"] },
+  { label: "webgpu", options: ["webgpu"] },
+  { label: "webnn-npu", options: [{ name: "webnn", deviceType: "npu" }] },
+  { label: "webnn-gpu", options: [{ name: "webnn", deviceType: "gpu" }] },
+  { label: "webnn-cpu", options: [{ name: "webnn", deviceType: "cpu" }] },
+];
 
 const log = (line) => { document.getElementById("log").textContent += "\n" + line; };
 const pct = (values, p) => {
@@ -68,15 +79,17 @@ const results = {};
 log(`model: ${MODEL}`);
 log(`shapes: context ${CTX}, options ${OPT} x ${OPTBYTES}`);
 
-// Only one copy of the runtime is loaded, but each provider gets its own session, so the two rows
-// below measure the same runtime with a different execution provider.
-const ort = await import(`https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/ort.webgpu.mjs`);
+// Each provider gets its own session, so the rows below measure the same runtime with a different
+// execution provider. The bundle itself is shared.
+const ort = await import(BUNDLE);
 ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
+log(`runtime bundle: ${BUNDLE.split("/").pop()}`);
+log(`WebNN api present (navigator.ml): ${"ml" in navigator}`);
 
-for (const provider of ["wasm", "webgpu"]) {
+for (const provider of PROVIDERS) {
   try {
     const started = performance.now();
-    const session = await ort.InferenceSession.create(MODEL, { executionProviders: [provider] });
+    const session = await ort.InferenceSession.create(MODEL, { executionProviders: provider.options });
     const inputs = syntheticInputs();
     await session.run(inputs);                       // first call: shader/kernel warmup
     const cold = performance.now() - started;
@@ -88,21 +101,29 @@ for (const provider of ["wasm", "webgpu"]) {
       times.push(performance.now() - t0);
     }
     const median = pct(times, 0.5);
-    results[provider] = { cold_start_ms: +cold.toFixed(1), median_ms: +median.toFixed(2),
+    results[provider.label] = { cold_start_ms: +cold.toFixed(1), median_ms: +median.toFixed(2),
                           p95_ms: +pct(times, 0.95).toFixed(2),
                           decisions_per_s: +(1000 / median).toFixed(1) };
     const row = document.createElement("tr");
-    row.innerHTML = `<td>${provider}</td><td>${results[provider].cold_start_ms} ms</td>` +
-      `<td>${results[provider].median_ms} ms</td><td>${results[provider].p95_ms} ms</td>` +
-      `<td>${results[provider].decisions_per_s}</td>`;
+    row.innerHTML = `<td>${provider.label}</td><td>${results[provider.label].cold_start_ms} ms</td>` +
+      `<td>${results[provider.label].median_ms} ms</td><td>${results[provider.label].p95_ms} ms</td>` +
+      `<td>${results[provider.label].decisions_per_s}</td>`;
     document.querySelector("#table tbody").appendChild(row);
     document.getElementById("table").hidden = false;
-    log(`${provider}: ok`);
+    log(`${provider.label}: ok`);
   } catch (error) {
-    results[provider] = { error: String(error) };
-    log(`${provider}: unavailable (${error})`);
+    results[provider.label] = { error: String(error) };
+    log(`${provider.label}: unavailable (${error})`);
   }
 }
+
+// The browser's own accounting of what this page cost to load: runtime, wasm binaries, model.
+const transfers = performance.getEntriesByType("resource");
+const payload = transfers.reduce(
+  (acc, entry) => ({ requests: acc.requests + 1, bytes: acc.bytes + (entry.transferSize || 0) }),
+  { requests: 0, bytes: 0 });
+results.__page_payload = payload;
+log(`page payload: ${payload.requests} requests, ${payload.bytes} bytes transferred`);
 
 window.__benchResults = results;
 window.__benchDone = true;
