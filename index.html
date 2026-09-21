@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>onepass-web</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.6 system-ui, -apple-system, Segoe UI, sans-serif; max-width: 44rem;
+         margin: 4rem auto; padding: 0 1.25rem; }
+  h1 { font-size: 1.5rem; margin-bottom: .25rem; }
+  .sub { opacity: .7; margin-top: 0; }
+  .card { border: 1px solid #8884; border-radius: .6rem; padding: 1rem 1.25rem; margin: 1rem 0; }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .35rem; }
+  a { color: inherit; }
+  code { background: #8882; padding: .1rem .3rem; border-radius: .25rem; }
+  .num { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<h1>onepass-web</h1>
+<p class="sub">A runtime and demos for one-pass specialists: models that answer one question per
+forward pass, with no tokenizer, no generation and no server.</p>
+
+<div class="card">
+  <h2><a href="runtime/bench.html">Browser bench</a></h2>
+  <p>Measures what a specialist costs in a browser: cold start and per-decision latency, for any
+  one-pass ONNX model, wasm against webgpu. This is the instrument behind the numbers below.</p>
+</div>
+
+<div class="card">
+  <h2>Play Connect Four against a specialist</h2>
+  <p>Coming: a 700 k-parameter player that chooses among legal moves in one pass, roughly
+  <span class="num">10 ms</span> per move in the browser, plus the receipts behind its strength.</p>
+</div>
+
+<h2>Measured so far</h2>
+<table>
+  <tr><th>provider</th><th>median per decision</th><th>decisions/s</th></tr>
+  <tr><td>wasm</td><td class="num">45.2 ms</td><td class="num">22.1</td></tr>
+  <tr><td>webgpu</td><td class="num">10.9 ms</td><td class="num">91.7</td></tr>
+</table>
+<p class="sub">Swedish form specialist (706 k parameters, 2.82 MB ONNX, 40 option slots), headless
+Chromium on an M4, model fetched from Hugging Face. The runtime that runs it is
+<code>29.0 MB</code>, ten times the model, which is why a purpose-built kernel is on the roadmap.</p>
+
+<p class="sub">Code: <a href="https://github.com/precisit/onepass-web">precisit/onepass-web</a> and
+<a href="https://github.com/precisit/one-pass-specialists">precisit/one-pass-specialists</a>.
+MIT, Precisit AB.</p>
+</body>
+</html>
