@@ -1,0 +1,9 @@
+# models are fetched from Hugging Face, never committed here
+*.onnx
+*.mlpackage
+*.safetensors
+
+# local serving
+*.log
+__pycache__/
+.DS_Store

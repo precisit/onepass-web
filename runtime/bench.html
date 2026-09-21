@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>one-pass specialist: browser bench</title>
+<style>
+  body { font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 2rem; max-width: 60rem; }
+  h1 { font-size: 1.05rem; }
+  table { border-collapse: collapse; margin: 1rem 0; }
+  th, td { border: 1px solid #ccc; padding: .25rem .6rem; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  #log { white-space: pre-wrap; color: #555; }
+  code { background: #f2f2f2; padding: 0 .2rem; }
+</style>
+</head>
+<body>
+<h1>one-pass specialist: browser bench</h1>
+
+<p>A one-pass specialist scores a supplied list of options in one forward pass. This page measures
+what that costs in a browser: cold start, per-decision latency, and how wasm and webgpu compare.
+Model and shapes come from the query string, so it works for any specialist.</p>
+
+<p><code>?model=</code> (ONNX url), <code>&amp;ctx=224</code>, <code>&amp;opt=40</code>,
+<code>&amp;optbytes=96</code>, <code>&amp;runs=60</code></p>
+
+<div id="log">starting…</div>
+<table id="table" hidden>
+  <thead><tr><th>provider</th><th>cold start</th><th>median</th><th>p95</th><th>decisions/s</th></tr></thead>
+  <tbody></tbody>
+</table>
+
+<script type="module">
+const ORT_VERSION = "1.30.0";
+const q = new URLSearchParams(location.search);
+const MODEL = q.get("model") || "https://huggingface.co/precisit/one-pass-sv-forms/resolve/main/sv0-forms.onnx";
+const CTX = Number(q.get("ctx") || 224);
+const OPT = Number(q.get("opt") || 40);
+const OPTBYTES = Number(q.get("optbytes") || 96);
+const RUNS = Number(q.get("runs") || 60);
+
+const log = (line) => { document.getElementById("log").textContent += "\n" + line; };
+const pct = (values, p) => {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+};
+
+function syntheticInputs() {
+  // A plausible row: a little text in the context, every option slot filled with option-ish bytes.
+  // Values are frozen so the two providers measure the same work.
+  const context = new Int32Array(CTX).fill(1);
+  const optionIds = new Int32Array(OPT * OPTBYTES).fill(1);
+  const optionMask = new Int32Array(OPT).fill(1);
+  const enc = new TextEncoder();
+  const stamp = enc.encode('ELEMENT Edit "E-post" value=""');
+  context.set(stamp.map((b) => b + 1).slice(0, CTX), 0);
+  for (let i = 0; i < OPT; i++) {
+    const option = enc.encode(`fyll Falt ${i}: varde ${i}`).map((b) => b + 1);
+    optionIds.set(option.slice(0, OPTBYTES), i * OPTBYTES);
+  }
+  return {
+    context_ids: new ort.Tensor("int32", context, [1, CTX]),
+    option_ids: new ort.Tensor("int32", optionIds, [1, OPT, OPTBYTES]),
+    option_mask: new ort.Tensor("int32", optionMask, [1, OPT]),
+  };
+}
+
+const results = {};
+log(`model: ${MODEL}`);
+log(`shapes: context ${CTX}, options ${OPT} x ${OPTBYTES}`);
+
+// Only one copy of the runtime is loaded, but each provider gets its own session, so the two rows
+// below measure the same runtime with a different execution provider.
+const ort = await import(`https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/ort.webgpu.mjs`);
+ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
+
+for (const provider of ["wasm", "webgpu"]) {
+  try {
+    const started = performance.now();
+    const session = await ort.InferenceSession.create(MODEL, { executionProviders: [provider] });
+    const inputs = syntheticInputs();
+    await session.run(inputs);                       // first call: shader/kernel warmup
+    const cold = performance.now() - started;
+
+    const times = [];
+    for (let i = 0; i < RUNS; i++) {
+      const t0 = performance.now();
+      await session.run(inputs);
+      times.push(performance.now() - t0);
+    }
+    const median = pct(times, 0.5);
+    results[provider] = { cold_start_ms: +cold.toFixed(1), median_ms: +median.toFixed(2),
+                          p95_ms: +pct(times, 0.95).toFixed(2),
+                          decisions_per_s: +(1000 / median).toFixed(1) };
+    const row = document.createElement("tr");
+    row.innerHTML = `<td>${provider}</td><td>${results[provider].cold_start_ms} ms</td>` +
+      `<td>${results[provider].median_ms} ms</td><td>${results[provider].p95_ms} ms</td>` +
+      `<td>${results[provider].decisions_per_s}</td>`;
+    document.querySelector("#table tbody").appendChild(row);
+    document.getElementById("table").hidden = false;
+    log(`${provider}: ok`);
+  } catch (error) {
+    results[provider] = { error: String(error) };
+    log(`${provider}: unavailable (${error})`);
+  }
+}
+
+window.__benchResults = results;
+window.__benchDone = true;
+log("\ndone");
+</script>
+</body>
+</html>
