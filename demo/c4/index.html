@@ -286,6 +286,7 @@ async function loadModel() {
     } catch (error) { log(`${ep} unavailable: ${error.message || error}`); }
   }
   if (!session) throw new Error("no execution provider could load the model");
+  current = { session, optionBytes: OPTION_BYTES, maxOptions: MAX_OPTIONS, lastMs: 0 };
   log(`model loaded in ${(performance.now() - started).toFixed(0)} ms on ${provider}`);
 }
 
