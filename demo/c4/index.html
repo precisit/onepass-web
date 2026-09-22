@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect Four vs a 706 k one-pass model</title>
+<style>
+  :root {
+    --board: #10457a; --hole: #f4f6f9; --x: #e8503a; --o: #f7c948;
+    --ink: #16202e; --muted: #6b7788; --bar: #5b8def; --bar-best: #16a34a;
+  }
+  body { margin: 0; padding: 1.6rem; background: #f4f6f9; color: var(--ink);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  h1 { font-size: 1.25rem; margin: 0 0 .2rem; }
+  .sub { color: var(--muted); font-size: .85rem; margin: 0 0 1.2rem; }
+  .sub a { color: var(--bar); }
+  .wrap { display: flex; gap: 1.6rem; flex-wrap: wrap; align-items: flex-start; }
+  svg { touch-action: manipulation; max-width: 100%; height: auto; }
+  .col-hit { fill: transparent; cursor: pointer; }
+  .col-hit:hover + .hoverpad { opacity: 1; }
+  .hoverpad { opacity: 0; transition: opacity .12s; }
+  aside { min-width: 19rem; flex: 1 1 19rem; }
+  .panel { background: #fff; border-radius: .6rem; padding: .8rem 1rem; margin-bottom: .8rem;
+           box-shadow: 0 1px 3px rgba(16,32,56,.10); }
+  .status { font-weight: 600; min-height: 1.4em; }
+  .tiny { color: var(--muted); font-size: .78rem; }
+  .bars { display: flex; gap: .45rem; align-items: flex-end; height: 7rem; margin-top: .4rem; }
+  .bar { flex: 1; display: flex; flex-direction: column; justify-content: flex-end;
+         text-align: center; font-size: .7rem; color: var(--muted); }
+  .bar i { display: block; background: var(--bar); border-radius: .2rem .2rem 0 0; height: 0;
+           transition: height .25s ease; }
+  .bar.best i { background: var(--bar-best); }
+  .bar b { font-weight: 600; color: var(--ink); font-size: .72rem; }
+  pre { margin: .4rem 0 0; font-size: .72rem; color: var(--muted); white-space: pre-wrap; }
+  button { font: inherit; padding: .35rem .8rem; border-radius: .4rem; border: 1px solid #cbd5e1;
+           background: #fff; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>Connect Four against a 706 k one-pass model</h1>
+<p class="sub">Every decision is one forward pass over 224 context bytes and 8 option slots &times; 24
+bytes. Model: <a href="https://huggingface.co/precisit/onepass-c4">precisit/onepass-c4</a>. Runtime:
+<a href="https://github.com/precisit/onepass-web">onepass-web</a>.</p>
+<div class="wrap">
+  <svg id="board" viewBox="0 0 700 600" width="560" height="480" aria-label="Connect Four board"></svg>
+  <aside>
+    <div class="panel">
+      <div class="status" id="status">loading the model…</div>
+      <div class="tiny" id="meta"></div>
+      <p style="margin:.6rem 0 0"><button id="reset">New game</button></p>
+    </div>
+    <div class="panel">
+      <div class="tiny">the model's score for each legal column (green = the one it played)</div>
+      <div class="bars" id="bars"></div>
+    </div>
+    <div class="panel"><div class="tiny">self-test and log</div><pre id="log"></pre></div>
+  </aside>
+</div>
+<script type="module">
+const MODEL = "https://huggingface.co/precisit/onepass-c4/resolve/main/onepass-c4-8x24.onnx";
+const CTX_BYTES = 224, OPTION_BYTES = 24, MAX_OPTIONS = 8;
+const W = 7, H = 6, R = 38, PAD = 18, GAP = 8;
+const CELL = 2 * R + GAP;
+
+const boardEl = document.getElementById("board");
+const statusEl = document.getElementById("status");
+const metaEl = document.getElementById("meta");
+const logEl = document.getElementById("log");
+const barsEl = document.getElementById("bars");
+const log = (line) => { logEl.textContent += line + "\n"; };
+
+// ---- game state ---------------------------------------------------------
+// grid[row][col], row 0 is the bottom row. `moves` is the move history in 1-indexed columns.
+let grid, moves, toMove, over;
+
+function reset() {
+  grid = Array.from({ length: H }, () => Array(W).fill(null));
+  moves = [];
+  toMove = "X";
+  over = false;
+  statusEl.textContent = "your move — you are X";
+  renderBars({});
+  buildBoard();
+}
+
+const legal = () => [...Array(W).keys()].filter((c) => grid[H - 1][c] === null);
+
+function drop(col, player) {
+  const row = grid.findIndex((r) => r[col] === null);
+  grid[row][col] = player;
+  moves.push(col + 1);
+  return row;
+}
+
+function winner() {
+  const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
+  for (let r = 0; r < H; r += 1) {
+    for (let c = 0; c < W; c += 1) {
+      const who = grid[r][c];
+      if (!who) continue;
+      for (const [dc, dr] of dirs) {
+        let n = 1;
+        while (n < 4) {
+          const rr = r + dr * n, cc = c + dc * n;
+          if (rr < 0 || rr >= H || cc < 0 || cc >= W || grid[rr][cc] !== who) break;
+          n += 1;
+        }
+        if (n === 4) return who;
+      }
+    }
+  }
+  return null;
+}
+
+// ---- the encoding the model was trained on ------------------------------
+// SPELARE <who>\nDRAG <1-indexed columns>\n<6 rows top to bottom>\nLEDIGA <count>
+function renderContext() {
+  const rows = [];
+  for (let r = H - 1; r >= 0; r -= 1) {
+    rows.push(grid[r].map((v) => v || ".").join(""));
+  }
+  return [`SPELARE ${toMove}`, `DRAG ${moves.join(" ")}`, ...rows, `LEDIGA ${legal().length}`]
+    .join("\n");
+}
+
+const optionText = (col) => `spela kolumn ${col + 1}`;
+
+function byteIds(text, length) {
+  const out = new Int32Array(length);
+  const bytes = new TextEncoder().encode(text);
+  for (let i = 0; i < Math.min(bytes.length, length); i += 1) out[i] = bytes[i] + 1;
+  return out;
+}
+
+function encodeDecision() {
+  const cols = legal();
+  const context = byteIds(renderContext(), CTX_BYTES);
+  const optionIds = new Int32Array(MAX_OPTIONS * OPTION_BYTES);
+  const optionMask = new Int32Array(MAX_OPTIONS);
+  cols.forEach((col, i) => {
+    const ids = byteIds(optionText(col), OPTION_BYTES);
+    optionIds.set(ids, i * OPTION_BYTES);
+    optionMask[i] = 1;
+  });
+  return { cols, context, optionIds, optionMask };
+}
+// ---- the board, drawn as SVG -------------------------------------------
+const cellX = (col) => PAD + R + col * CELL;
+const cellY = (row) => PAD + R + (H - 1 - row) * CELL;
+
+function buildBoard() {
+  boardEl.innerHTML = "";
+  const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  bg.setAttribute("x", PAD / 2);
+  bg.setAttribute("y", PAD / 2);
+  bg.setAttribute("width", PAD + W * CELL);
+  bg.setAttribute("height", PAD + H * CELL);
+  bg.setAttribute("rx", 22);
+  bg.setAttribute("fill", "var(--board)");
+  boardEl.appendChild(bg);
+
+  for (let r = 0; r < H; r += 1) {
+    for (let c = 0; c < W; c += 1) {
+      const hole = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      hole.setAttribute("cx", cellX(c));
+      hole.setAttribute("cy", cellY(r));
+      hole.setAttribute("r", R);
+      hole.setAttribute("fill", "var(--hole)");
+      boardEl.appendChild(hole);
+      if (grid[r][c]) paint(r, c, grid[r][c]);
+    }
+  }
+
+  for (let c = 0; c < W; c += 1) {
+    const hit = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    hit.setAttribute("class", "col-hit");
+    hit.setAttribute("x", cellX(c) - R);
+    hit.setAttribute("y", PAD / 2);
+    hit.setAttribute("width", 2 * R);
+    hit.setAttribute("height", H * CELL);
+    hit.addEventListener("click", () => humanMove(c));
+    boardEl.appendChild(hit);
+  }
+}
+
+function stone(row, col, player) {
+  const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  dot.setAttribute("cx", cellX(col));
+  dot.setAttribute("cy", cellY(row));
+  dot.setAttribute("r", R - 2);
+  dot.setAttribute("fill", player === "X" ? "var(--x)" : "var(--o)");
+  dot.setAttribute("class", "stone");
+  dot.setAttribute("data-cell", `${row}-${col}`);
+  return dot;
+}
+
+function paint(row, col, player, animate = false) {
+  // NB: a class like `.stone.0-3` is an invalid CSS selector (leading digit) and makes
+  // querySelector throw, so the cell is addressed with a data attribute instead.
+  const existing = boardEl.querySelector(`.stone[data-cell="${row}-${col}"]`);
+  if (existing) existing.remove();
+  const dot = stone(row, col, player);
+  boardEl.insertBefore(dot, boardEl.querySelector(".col-hit"));
+  if (animate) {
+    const from = -(cellY(row) + R * 2);
+    dot.animate(
+      [{ transform: `translateY(${from}px)` }, { transform: "translateY(0)" }],
+      { duration: 300 + 12 * (row + 1), easing: "cubic-bezier(.35,0,.9,1)" },
+    );
+  }
+}
+
+// ---- the model's scores, one bar per legal column ----------------------
+function renderBars(scores, played = null) {
+  barsEl.innerHTML = "";
+  const values = Object.values(scores);
+  const max = values.length ? Math.max(...values) : 1;
+  const min = values.length ? Math.min(...values) : 0;
+  const span = max - min || 1;
+  for (let col = 0; col < W; col += 1) {
+    const bar = document.createElement("div");
+    bar.className = "bar" + (played === col ? " best" : "");
+    const fill = document.createElement("i");
+    const value = scores[col];
+    fill.style.height = value === undefined ? "0" : `${8 + 92 * ((value - min) / span)}%`;
+    const label = document.createElement("b");
+    label.textContent = value === undefined ? "" : value.toFixed(1);
+    const name = document.createElement("span");
+    name.textContent = col + 1;
+    bar.append(label, fill, name);
+    barsEl.appendChild(bar);
+  }
+}
+// ---- runtime -----------------------------------------------------------
+const ORT_URL = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
+let ort, session, provider = "?", lastMs = 0;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function loadModel() {
+  const started = performance.now();
+  ort = await import(`${ORT_URL}ort.all.mjs`);
+  ort.env.wasm.wasmPaths = ORT_URL;
+  for (const ep of ["webgpu", "wasm"]) {
+    try {
+      session = await ort.InferenceSession.create(MODEL, { executionProviders: [ep] });
+      provider = ep;
+      break;
+    } catch (error) { log(`${ep} unavailable: ${error.message || error}`); }
+  }
+  if (!session) throw new Error("no execution provider could load the model");
+  log(`model loaded in ${(performance.now() - started).toFixed(0)} ms on ${provider}`);
+}
+
+async function modelScores() {
+  const { cols, context, optionIds, optionMask } = encodeDecision();
+  const out = await session.run({
+    context_ids: new ort.Tensor("int32", context, [1, CTX_BYTES]),
+    option_ids: new ort.Tensor("int32", optionIds, [1, MAX_OPTIONS, OPTION_BYTES]),
+    option_mask: new ort.Tensor("int32", optionMask, [1, MAX_OPTIONS]),
+  });
+  const logits = Array.from(out[session.outputNames[0]].data).slice(0, cols.length);
+  const scores = {};
+  cols.forEach((col, i) => { scores[col] = logits[i]; });
+  let best = 0;
+  cols.forEach((col, i) => { if (logits[i] > logits[best]) best = i; });
+  return { scores, best: cols[best] };
+}
+
+async function advice() {
+  if (over) return;
+  statusEl.textContent = "your move — you are X";
+  const started = performance.now();
+  const { scores, best } = await modelScores();
+  lastMs = performance.now() - started;
+  renderBars(scores, best);
+  metaEl.textContent = `${provider} · ${lastMs.toFixed(1)} ms · green = what the model would play for you`;
+}
+
+async function humanMove(col) {
+  if (over || toMove !== "X" || grid[H - 1][col] !== null) return;
+  const row = drop(col, "X");
+  paint(row, col, "X", true);
+  if (finish()) return;
+  toMove = "O";
+  statusEl.textContent = "the model is thinking…";
+  await sleep(180);
+  const started = performance.now();
+  const { scores, best } = await modelScores();
+  lastMs = performance.now() - started;
+  renderBars(scores, best);
+  const stoneRow = drop(best, "O");
+  paint(stoneRow, best, "O", true);
+  metaEl.textContent = `${provider} · ${lastMs.toFixed(1)} ms · green = the model's own choice`;
+  if (finish()) return;
+  toMove = "X";
+  await sleep(340);
+  await advice();
+}
+
+function finish() {
+  const who = winner();
+  const full = legal().length === 0;
+  if (!who && !full) return false;
+  over = true;
+  statusEl.textContent = who === "X" ? "you win 🎉" : who === "O" ? "the model wins" : "draw";
+  return true;
+}
+// ---- self-test: does this page's encoding match the Python one? --------
+// References come from make_selftest.py (same corpus, same 224/8/24 limits): the sha256 of the
+// encoded int32 buffers, first 32 hex chars. If the encoder drifts by one byte the test fails, which
+// matters because a wrong encoder looks exactly like a weak model.
+async function sha32(buffer) {
+  const digest = await crypto.subtle.digest("SHA-256", buffer);
+  const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return hex.slice(0, 32);
+}
+
+function replay(context) {
+  const lines = context.split("\n");
+  grid = Array.from({ length: H }, () => Array(W).fill(null));
+  moves = [];
+  toMove = lines[0].replace("SPELARE", "").trim();
+  for (const token of lines[1].replace("DRAG", "").trim().split(/\s+/).filter(Boolean)) {
+    const col = Number(token) - 1;
+    const row = grid.findIndex((r) => r[col] === null);
+    grid[row][col] = moves.length % 2 === 0 ? "X" : "O";
+    moves.push(col + 1);
+  }
+  return renderContext();
+}
+
+async function selfTest() {
+  const rows = await (await fetch("./selftest-rows.json")).json();
+  let passed = 0;
+  for (const row of rows) {
+    const sameContext = replay(row.context) === row.context;
+    const contextIds = byteIds(row.context, CTX_BYTES);
+    const optionIds = new Int32Array(MAX_OPTIONS * OPTION_BYTES);
+    const optionMask = new Int32Array(MAX_OPTIONS);
+    row.options.forEach((text, i) => {
+      optionIds.set(byteIds(text, OPTION_BYTES), i * OPTION_BYTES);
+      optionMask[i] = 1;
+    });
+    const ok = sameContext
+      && (await sha32(contextIds.buffer)) === row.hashes.context
+      && (await sha32(optionIds.buffer)) === row.hashes.options
+      && (await sha32(optionMask.buffer)) === row.hashes.mask;
+    passed += ok ? 1 : 0;
+    if (!ok) log(`self-test FAILED for ${row.name} (context match: ${sameContext})`);
+  }
+  log(`self-test: ${passed}/${rows.length} reference positions reproduce the Python encoding`);
+  return passed === rows.length;
+}
+
+// ---- go ----------------------------------------------------------------
+document.getElementById("reset").addEventListener("click", async () => { reset(); await advice(); });
+
+reset();
+loadModel()
+  .then(selfTest)
+  .then(async () => { reset(); await advice(); })
+  .catch((error) => { statusEl.textContent = `could not start: ${error.message || error}`; });
+</script>
+</body>
+</html>
+
