@@ -47,7 +47,27 @@ bytes. Model: <a href="https://huggingface.co/precisit/onepass-c4">precisit/onep
     <div class="panel">
       <div class="status" id="status">loading the model…</div>
       <div class="tiny" id="meta"></div>
-      <p style="margin:.6rem 0 0"><button id="reset">New game</button></p>
+      <p style="margin:.6rem 0 0">
+        <label class="tiny">opponent
+          <select id="opponent">
+            <option value="model">the model</option>
+            <option value="random">random (naive)</option>
+          </select>
+        </label>
+        <button id="reset">New game</button>
+      </p>
+    </div>
+    <div class="panel">
+      <div class="tiny">arena — two players, as fast as the browser allows</div>
+      <p style="margin:.4rem 0 0">
+        <label class="tiny">X <select id="side-a"></select></label>
+        <label class="tiny">O <select id="side-b"></select></label>
+      </p>
+      <p style="margin:.4rem 0 0">
+        <button id="play">run 20 games</button>
+        <button id="stop" hidden>stop</button>
+      </p>
+      <div class="tiny" id="score">—</div>
     </div>
     <div class="panel">
       <div class="tiny">the model's score for each legal column (green = the one it played)</div>
@@ -132,17 +152,17 @@ function byteIds(text, length) {
   return out;
 }
 
-function encodeDecision() {
+function encodeDecision(optionBytes = OPTION_BYTES, maxOptions = MAX_OPTIONS) {
   const cols = legal();
   const context = byteIds(renderContext(), CTX_BYTES);
-  const optionIds = new Int32Array(MAX_OPTIONS * OPTION_BYTES);
-  const optionMask = new Int32Array(MAX_OPTIONS);
+  const optionIds = new Int32Array(maxOptions * optionBytes);
+  const optionMask = new Int32Array(maxOptions);
   cols.forEach((col, i) => {
-    const ids = byteIds(optionText(col), OPTION_BYTES);
-    optionIds.set(ids, i * OPTION_BYTES);
+    const ids = byteIds(optionText(col), optionBytes);
+    optionIds.set(ids, i * optionBytes);
     optionMask[i] = 1;
   });
-  return { cols, context, optionIds, optionMask };
+  return { cols, context, optionIds, optionMask, optionBytes, maxOptions };
 }
 // ---- the board, drawn as SVG -------------------------------------------
 const cellX = (col) => PAD + R + col * CELL;
@@ -233,8 +253,26 @@ function renderBars(scores, played = null) {
 }
 // ---- runtime -----------------------------------------------------------
 const ORT_URL = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
-let ort, session, provider = "?", lastMs = 0;
+let ort, session, provider = "?", lastMs = 0, current = null;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---- who can play ------------------------------------------------------
+// `?b=<onnx-url>` adds a second model, so the arena can compare checkpoints without a rebuild.
+const CATALOGUE = { "onepass-c4 v3": { url: MODEL, optionBytes: 24, maxOptions: 8 } };
+const second = new URLSearchParams(location.search).get("b");
+if (second) CATALOGUE["second model"] = { url: second, optionBytes: 24, maxOptions: 8 };
+const engines = new Map();
+
+async function engineFor(name) {
+  if (name === "random") return null;
+  if (engines.has(name)) return engines.get(name);
+  const spec = CATALOGUE[name];
+  if (!spec) throw new Error(`unknown player ${name}`);
+  const created = await ort.InferenceSession.create(spec.url, { executionProviders: ["webgpu", "wasm"] });
+  const engine = { session: created, optionBytes: spec.optionBytes, maxOptions: spec.maxOptions, lastMs: 0 };
+  engines.set(name, engine);
+  return engine;
+}
 
 async function loadModel() {
   const started = performance.now();
@@ -251,19 +289,29 @@ async function loadModel() {
   log(`model loaded in ${(performance.now() - started).toFixed(0)} ms on ${provider}`);
 }
 
-async function modelScores() {
-  const { cols, context, optionIds, optionMask } = encodeDecision();
-  const out = await session.run({
+async function evaluate(engine) {
+  // `engine` = {session, optionBytes, maxOptions, provider}; the arena runs several of them.
+  const { cols, context, optionIds, optionMask, optionBytes, maxOptions } =
+    encodeDecision(engine.optionBytes, engine.maxOptions);
+  const started = performance.now();
+  const out = await engine.session.run({
     context_ids: new ort.Tensor("int32", context, [1, CTX_BYTES]),
-    option_ids: new ort.Tensor("int32", optionIds, [1, MAX_OPTIONS, OPTION_BYTES]),
-    option_mask: new ort.Tensor("int32", optionMask, [1, MAX_OPTIONS]),
+    option_ids: new ort.Tensor("int32", optionIds, [1, maxOptions, optionBytes]),
+    option_mask: new ort.Tensor("int32", optionMask, [1, maxOptions]),
   });
-  const logits = Array.from(out[session.outputNames[0]].data).slice(0, cols.length);
+  engine.lastMs = performance.now() - started;
+  const logits = Array.from(out[engine.session.outputNames[0]].data).slice(0, cols.length);
   const scores = {};
   cols.forEach((col, i) => { scores[col] = logits[i]; });
   let best = 0;
   cols.forEach((col, i) => { if (logits[i] > logits[best]) best = i; });
-  return { scores, best: cols[best] };
+  return { scores, best: cols[best], cols };
+}
+
+async function modelScores() {
+  const result = await evaluate(current);
+  lastMs = current.lastMs;
+  return result;
 }
 
 async function advice() {
@@ -282,19 +330,32 @@ async function humanMove(col) {
   paint(row, col, "X", true);
   if (finish()) return;
   toMove = "O";
-  statusEl.textContent = "the model is thinking…";
-  await sleep(180);
+  await opponentMove();
+  if (finish()) return;
+  toMove = "X";
+  await sleep(300);
+  await advice();
+}
+
+async function opponentMove() {
+  statusEl.textContent = "the opponent is thinking…";
+  await sleep(160);
+  if (document.getElementById("opponent").value === "random") {
+    const cols = legal();
+    const col = cols[Math.floor(Math.random() * cols.length)];
+    const row = drop(col, "O");
+    paint(row, col, "O", true);
+    barsEl.innerHTML = "";
+    metaEl.textContent = "naive opponent: a uniformly random legal column";
+    return;
+  }
   const started = performance.now();
   const { scores, best } = await modelScores();
   lastMs = performance.now() - started;
   renderBars(scores, best);
-  const stoneRow = drop(best, "O");
-  paint(stoneRow, best, "O", true);
+  const row = drop(best, "O");
+  paint(row, best, "O", true);
   metaEl.textContent = `${provider} · ${lastMs.toFixed(1)} ms · green = the model's own choice`;
-  if (finish()) return;
-  toMove = "X";
-  await sleep(340);
-  await advice();
 }
 
 function finish() {
@@ -352,13 +413,80 @@ async function selfTest() {
   return passed === rows.length;
 }
 
+// ---- arena: two players, as fast as the browser allows ------------------
+let arenaRunning = false;
+
+function fastPaint(row, col, player) {
+  const dot = stone(row, col, player);
+  boardEl.insertBefore(dot, boardEl.querySelector(".col-hit"));
+}
+
+async function chooseCol(engine) {
+  if (!engine) {
+    const cols = legal();
+    return cols[Math.floor(Math.random() * cols.length)];
+  }
+  const { best } = await evaluate(engine);
+  return best;
+}
+
+async function oneArenaGame(engineA, engineB) {
+  reset();
+  let mover = "X";
+  while (!winner() && legal().length) {
+    const engine = mover === "X" ? engineA : engineB;
+    const col = await chooseCol(engine);
+    const row = drop(col, mover);
+    fastPaint(row, col, mover);
+    mover = mover === "X" ? "O" : "X";
+    await sleep(0); // let the browser paint; this is what keeps it visibly live
+  }
+  if (!winner()) return "draw";
+  return mover === "O" ? "A" : "B"; // the player who did *not* move last won
+}
+
+async function runArena(games) {
+  const nameA = document.getElementById("side-a").value;
+  const nameB = document.getElementById("side-b").value;
+  const engineA = await engineFor(nameA);
+  const engineB = await engineFor(nameB);
+  const tally = { A: 0, B: 0, draw: 0 };
+  const ms = { A: [], B: [] };
+  arenaRunning = true;
+  document.getElementById("play").hidden = true;
+  document.getElementById("stop").hidden = false;
+  for (let game = 1; game <= games && arenaRunning; game += 1) {
+    const result = await oneArenaGame(engineA, engineB);
+    tally[result] += 1;
+    document.getElementById("score").innerHTML =
+      `${game}/${games} — X <b>${nameA}</b>: ${tally.A} · O <b>${nameB}</b>: ${tally.B}` +
+      ` · draws ${tally.draw}`;
+  }
+  document.getElementById("play").hidden = false;
+  document.getElementById("stop").hidden = true;
+  arenaRunning = false;
+}
+
+function fillSelect(element, names) {
+  element.innerHTML = names.map((n) => `<option value="${n}">${n}</option>`).join("");
+}
+
 // ---- go ----------------------------------------------------------------
 document.getElementById("reset").addEventListener("click", async () => { reset(); await advice(); });
+document.getElementById("play").addEventListener("click", () => runArena(20));
+document.getElementById("stop").addEventListener("click", () => { arenaRunning = false; });
 
 reset();
 loadModel()
   .then(selfTest)
-  .then(async () => { reset(); await advice(); })
+  .then(async () => {
+    const names = [...Object.keys(CATALOGUE), "random"];
+    fillSelect(document.getElementById("side-a"), names);
+    fillSelect(document.getElementById("side-b"), names);
+    document.getElementById("side-b").value = "random";
+    reset();
+    await advice();
+  })
   .catch((error) => { statusEl.textContent = `could not start: ${error.message || error}`; });
 </script>
 </body>
