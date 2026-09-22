@@ -29,20 +29,28 @@ forward pass, with no tokenizer, no generation and no server.</p>
 </div>
 
 <div class="card">
-  <h2>Play Connect Four against a specialist</h2>
-  <p>Coming: a 700 k-parameter player that chooses among legal moves in one pass, roughly
-  <span class="num">10 ms</span> per move in the browser, plus the receipts behind its strength.</p>
+  <h2><a href="demo/c4/">Play Connect Four against a specialist</a></h2>
+  <p>A 706 k-parameter model that scores the legal columns in one forward pass —
+  <span class="num">3.9 ms</span> per move on webgpu. It plays, it loses, and the column scores under
+  the board show exactly why. The same page runs an arena, so a model can play another model or a
+  naive random opponent, as fast as the browser allows.</p>
 </div>
 
 <h2>Measured so far</h2>
 <table>
-  <tr><th>provider</th><th>median per decision</th><th>decisions/s</th></tr>
-  <tr><td>wasm</td><td class="num">45.2 ms</td><td class="num">22.1</td></tr>
-  <tr><td>webgpu</td><td class="num">10.9 ms</td><td class="num">91.7</td></tr>
+  <tr><th>shape</th><th>provider</th><th>median per decision</th><th>decisions/s</th></tr>
+  <tr><td>40 × 96 options</td><td>wasm</td><td class="num">45.5 ms</td><td class="num">22</td></tr>
+  <tr><td>40 × 96 options</td><td>webgpu</td><td class="num">12.0 ms</td><td class="num">83</td></tr>
+  <tr><td>8 × 24 options</td><td>wasm</td><td class="num">7.8 ms</td><td class="num">128</td></tr>
+  <tr><td>8 × 24 options</td><td>webgpu</td><td class="num">3.9 ms</td><td class="num">256</td></tr>
+  <tr><td>8 × 24 options</td><td>webnn (npu)</td><td class="num">10.0 ms</td><td class="num">100</td></tr>
 </table>
-<p class="sub">Swedish form specialist (706 k parameters, 2.82 MB ONNX, 40 option slots), headless
-Chromium on an M4, model fetched from Hugging Face. The runtime that runs it is
-<code>29.0 MB</code>, ten times the model, which is why a purpose-built kernel is on the roadmap.</p>
+<p class="sub">706 k parameters, 2.9 MB ONNX, headless Chromium on an M4, model fetched from Hugging
+Face. The shape is a bigger lever than the provider: shrinking the option block from 40 × 96 to
+8 × 24 cut the work about twenty-fold and made the new wasm path faster than the old webgpu one. The
+runtime is still <code>29 MB</code>, ten times the model, which is why a purpose-built kernel is on
+the roadmap. WebNN (the browser's own NPU route) needs Chrome Canary and a flag; it is measured, not
+assumed.</p>
 
 <p class="sub">Code: <a href="https://github.com/precisit/onepass-web">precisit/onepass-web</a> and
 <a href="https://github.com/precisit/one-pass-specialists">precisit/one-pass-specialists</a>.
