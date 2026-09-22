@@ -268,7 +268,10 @@ async function engineFor(name) {
   if (engines.has(name)) return engines.get(name);
   const spec = CATALOGUE[name];
   if (!spec) throw new Error(`unknown player ${name}`);
-  const created = await ort.InferenceSession.create(spec.url, { executionProviders: ["webgpu", "wasm"] });
+  // wasm, not webgpu, for arena engines: two WebGPU sessions running a tight loop of inferences
+  // crashed the renderer in testing. The arena measures play, not speed, and the human's own
+  // session above still uses webgpu.
+  const created = await ort.InferenceSession.create(spec.url, { executionProviders: ["wasm"] });
   const engine = { session: created, optionBytes: spec.optionBytes, maxOptions: spec.maxOptions, lastMs: 0 };
   engines.set(name, engine);
   return engine;
@@ -427,8 +430,12 @@ async function chooseCol(engine) {
     const cols = legal();
     return cols[Math.floor(Math.random() * cols.length)];
   }
-  const { best } = await evaluate(engine);
-  return best;
+  const { cols, scores } = await evaluate(engine);
+  // Random tie-break among near-equal columns. Without it every game is the same game, and a
+  // scoreboard like "20-0" is one deterministic line counted twenty times.
+  const best = Math.max(...cols.map((c) => scores[c]));
+  const tied = cols.filter((c) => scores[c] > best - 1e-3);
+  return tied[Math.floor(Math.random() * tied.length)];
 }
 
 async function oneArenaGame(engineA, engineB) {
@@ -457,8 +464,12 @@ async function runArena(games) {
   document.getElementById("play").hidden = true;
   document.getElementById("stop").hidden = false;
   for (let game = 1; game <= games && arenaRunning; game += 1) {
-    const result = await oneArenaGame(engineA, engineB);
-    tally[result] += 1;
+    // Alternate who opens, so the scoreboard is not "first player wins" measured twice.
+    const aFirst = game % 2 === 1;
+    const result = await oneArenaGame(aFirst ? engineA : engineB, aFirst ? engineB : engineA);
+    if (result === "draw") tally.draw += 1;
+    else if ((aFirst && result === "A") || (!aFirst && result === "B")) tally.A += 1;
+    else tally.B += 1;
     document.getElementById("score").innerHTML =
       `${game}/${games} — X <b>${nameA}</b>: ${tally.A} · O <b>${nameB}</b>: ${tally.B}` +
       ` · draws ${tally.draw}`;
