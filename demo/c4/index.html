@@ -3,94 +3,162 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Connect Four against a one-pass model</title>
+<title>Connect Four against a tiny AI in your browser</title>
 <style>
   :root {
-    --board: #10457a; --hole: #f4f6f9; --x: #e8503a; --o: #f7c948;
-    --ink: #16202e; --muted: #6b7788; --bar: #5b8def; --bar-best: #16a34a;
+    --board: #10457a; --hole: #eef2f7; --red: #e8503a; --yellow: #f7c948;
+    --ink: #16202e; --muted: #5f6b7c; --line: #e3e8ef; --bg: #f4f6f9; --accent: #2f6fe0;
+    --good: #16a34a; --panel: #fff;
   }
-  body { margin: 0; padding: 1.6rem; background: #f4f6f9; color: var(--ink);
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; padding: 1.5rem 1.25rem 3rem; background: var(--bg); color: var(--ink);
          font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-  h1 { font-size: 1.25rem; margin: 0 0 .2rem; }
-  .sub { color: var(--muted); font-size: .85rem; margin: 0 0 1.2rem; }
-  .sub a { color: var(--bar); }
-  .wrap { display: flex; gap: 1.6rem; flex-wrap: wrap; align-items: flex-start; }
-  svg { touch-action: manipulation; max-width: 100%; height: auto; }
-  .col-hit { fill: transparent; cursor: pointer; }
-  .col-hit:hover + .hoverpad { opacity: 1; }
-  .hoverpad { opacity: 0; transition: opacity .12s; }
-  aside { min-width: 19rem; flex: 1 1 19rem; }
-  .panel { background: #fff; border-radius: .6rem; padding: .8rem 1rem; margin-bottom: .8rem;
-           box-shadow: 0 1px 3px rgba(16,32,56,.10); }
-  .status { font-weight: 600; min-height: 1.4em; }
-  .tiny { color: var(--muted); font-size: .78rem; }
-  .bars { display: flex; gap: .45rem; align-items: flex-end; height: 7rem; margin-top: .4rem; }
-  .bar { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end;
-         text-align: center; font-size: .7rem; color: var(--muted); }
-  .bar i { display: block; background: var(--bar); border-radius: .2rem .2rem 0 0; height: 0;
-           transition: height .25s ease; }
-  .bar.best i { background: var(--bar-best); }
-  .bar b { font-weight: 600; color: var(--ink); font-size: .72rem; }
-  pre { margin: .4rem 0 0; font-size: .72rem; color: var(--muted); white-space: pre-wrap; }
-  button { font: inherit; padding: .35rem .8rem; border-radius: .4rem; border: 1px solid #cbd5e1;
+  header { max-width: 1120px; margin: 0 auto 1.1rem; }
+  h1 { font-size: 1.45rem; margin: 0 0 .3rem; letter-spacing: -.01em; }
+  .lede { color: var(--muted); margin: 0; max-width: 46rem; }
+  .lede a { color: var(--accent); }
+  .layout { max-width: 1120px; margin: 0 auto; display: grid; gap: 1.25rem;
+            grid-template-columns: minmax(0, 560px) minmax(0, 1fr); align-items: start; }
+  @media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+  .game { display: flex; flex-direction: column; gap: .75rem; }
+  .side { display: flex; flex-direction: column; gap: .9rem; }
+  .panel { background: var(--panel); border-radius: .75rem; padding: .9rem 1.05rem;
+           box-shadow: 0 1px 3px rgba(16, 32, 56, .10); }
+  .panel h2 { font-size: .98rem; margin: 0 0 .15rem; }
+  .panel .what { color: var(--muted); font-size: .82rem; margin: 0 0 .65rem; }
+  /* status bar: always directly above the board */
+  .statusbar { display: flex; align-items: center; gap: .6rem; min-height: 3rem; padding: .55rem .9rem;
+               border-radius: .75rem; background: var(--panel); box-shadow: 0 1px 3px rgba(16,32,56,.10);
+               font-weight: 600; }
+  .statusbar .text { flex: 1; }
+  .statusbar .sub { display: block; font-weight: 400; color: var(--muted); font-size: .82rem; }
+  .statusbar.result { font-size: 1.15rem; }
+  .statusbar.result.win { background: #e7f7ec; box-shadow: inset 0 0 0 2px var(--good); }
+  .statusbar.result.lose { background: #fdeceb; box-shadow: inset 0 0 0 2px var(--red); }
+  .statusbar.result.draw { background: #eef2f7; box-shadow: inset 0 0 0 2px #9aa7b8; }
+  .statusbar.result.arena { background: #eaf1fd; box-shadow: inset 0 0 0 2px var(--accent); }
+  .disc { width: 1.35rem; height: 1.35rem; border-radius: 50%; flex: none;
+          box-shadow: inset 0 -2px 0 rgba(0,0,0,.18); }
+  .disc.red { background: var(--red); } .disc.yellow { background: var(--yellow); }
+  .disc.none { background: #cbd5e1; }
+  button { font: inherit; padding: .42rem .9rem; border-radius: .5rem; border: 1px solid #cbd5e1;
            background: #fff; cursor: pointer; }
-  select { font: inherit; font-size: .8rem; }
-  .row { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin: .4rem 0 0; }
-  .ci { color: var(--muted); font-size: .72rem; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button:disabled, select:disabled { opacity: .5; cursor: not-allowed; }
+  select { font: inherit; font-size: .88rem; padding: .25rem .35rem; border-radius: .4rem; border: 1px solid #cbd5e1; background: #fff; }
+  svg { display: block; width: 100%; height: auto; touch-action: manipulation; }
+  .col-hit { fill: transparent; }
+  .playable .col-hit { cursor: pointer; }
+  .stone.dim { opacity: .35; }
+  /* the AI's view, aligned with the board's columns */
+  .view-head { display: flex; justify-content: space-between; gap: .5rem; flex-wrap: wrap; align-items: baseline; }
+  .toggle { font-size: .8rem; color: var(--muted); display: inline-flex; gap: .35rem; align-items: center; cursor: pointer; }
+  .caption { font-size: .85rem; margin: .2rem 0 .1rem; min-height: 2.5em; }
+  .view-panel { padding-left: 0; padding-right: 0; }
+  .view-panel > .view-head, .view-panel > .caption { padding: 0 1.05rem; }
+  .legend { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .88rem; margin: .1rem 0 .7rem; }
+  .legend span { display: inline-flex; align-items: center; gap: .4rem; }
+  .legend .disc { width: 1rem; height: 1rem; }
+  .row { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin: .45rem 0; }
+  .field { display: flex; flex-direction: column; gap: .2rem; font-size: .78rem; color: var(--muted); }
+  .seg { display: inline-flex; border: 1px solid #cbd5e1; border-radius: .5rem; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: .35rem .75rem; background: #fff; }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+  dl.about { display: grid; grid-template-columns: max-content 1fr; gap: .3rem .9rem; margin: 0; font-size: .86rem; }
+  dl.about dt { color: var(--muted); }
+  dl.about dd { margin: 0; }
+  .fine { font-size: .78rem; color: var(--muted); margin: .7rem 0 0; }
+  .fine a { color: var(--accent); }
+  .scoreboard { display: grid; grid-template-columns: 1fr auto 1fr; gap: .5rem; align-items: center; margin: .7rem 0 .3rem; text-align: center; }
+  .scoreboard .num { font-size: 1.9rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .scoreboard .who { font-size: .78rem; color: var(--muted); }
+  .scoreboard .mid .num { font-size: 1.2rem; color: var(--muted); }
+  details.panel summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
+  pre { margin: .5rem 0 0; font-size: .72rem; color: var(--muted); white-space: pre-wrap; }
 </style>
 </head>
 <body>
-<h1>Connect Four against a one-pass model</h1>
-<p class="sub">Every decision is one forward pass: the board goes in as 44 bytes, the legal columns
-as short strings ("column 4"), and the model returns one score per column. No search, no rules, no
-server. Models: <a href="https://huggingface.co/precisit/onepass-c4">precisit/onepass-c4</a>. Runtime:
-<a href="https://github.com/precisit/onepass-web">onepass-web</a>.</p>
-<div class="wrap">
-  <svg id="board" viewBox="0 0 700 600" width="560" height="480" aria-label="Connect Four board"></svg>
-  <aside>
-    <div class="panel">
-      <div class="status" id="status">loading the model…</div>
-      <div class="tiny" id="meta"></div>
-      <div class="row">
-        <label class="tiny">opponent <select id="opponent"></select></label>
-        <label class="tiny">engine <select id="engine">
-          <option value="auto">auto</option>
-          <option value="wasm">wasm</option>
-          <option value="webgpu">webgpu</option>
-          <option value="webnn">webnn</option>
-        </select></label>
-        <label class="tiny">you play <select id="human-side">
-          <option value="X">first (X)</option>
-          <option value="O">second (O)</option>
-        </select></label>
-        <button id="reset">New game</button>
-      </div>
+<header>
+  <h1>Connect Four against a tiny AI in your browser</h1>
+  <p class="lede">The AI is a 7.8 MB model that picks each move in a single forward pass: it looks at the
+  board, gives every free column a score and plays the best one. No search, no hand-written rules — and
+  it runs entirely on your device, nothing is sent to a server.
+  <a href="https://huggingface.co/precisit/onepass-c4">Model</a> ·
+  <a href="https://github.com/precisit/one-pass-specialists/tree/main/examples/c4">How it was trained</a> ·
+  <a href="https://github.com/precisit/onepass-web">Source</a></p>
+</header>
+<main class="layout">
+  <section class="game">
+    <div class="statusbar" id="statusbar" role="status" aria-live="polite">
+      <span class="disc none" id="status-disc"></span>
+      <span class="text"><span id="status">Downloading the AI…</span><span class="sub" id="status-sub"></span></span>
+      <button class="primary" id="again" hidden>Play again</button>
     </div>
-    <div class="panel">
-      <div class="tiny">arena — two players, as fast as the browser allows; they swap who opens every game</div>
+    <svg id="board" viewBox="0 0 624 540" aria-label="Connect Four board"></svg>
+    <div class="panel view-panel">
+      <div class="view-head">
+        <h2>How the AI sees the board</h2>
+        <label class="toggle"><input type="checkbox" id="hint"> on my turn, show what the AI would play</label>
+      </div>
+      <p class="caption" id="view-caption">The AI's preference for each column appears here after it moves.</p>
+      <svg id="bars" viewBox="0 0 624 150" aria-label="the AI's preference per column"></svg>
+    </div>
+  </section>
+  <aside class="side">
+    <section class="panel" id="play-panel">
+      <h2>Play against the AI</h2>
+      <p class="what">Click a column on the board to drop your disc. Four in a row — across, up or diagonal — wins.</p>
       <div class="row">
-        <label class="tiny">A <select id="side-a"></select></label>
-        <label class="tiny">B <select id="side-b"></select></label>
-        <label class="tiny">random opening <select id="opening">
-          <option value="0">0 moves</option>
-          <option value="2" selected>2 moves</option>
-          <option value="4">4 moves</option>
+        <label class="field">Opponent <select id="opponent"></select></label>
+        <div class="field">Who starts?
+          <span class="seg" id="starter">
+            <button type="button" data-side="X" aria-pressed="true">You</button>
+            <button type="button" data-side="O" aria-pressed="false">The AI</button>
+          </span>
+        </div>
+      </div>
+      <div class="legend" id="legend"></div>
+      <button id="reset">New game</button>
+    </section>
+    <section class="panel">
+      <h2>About this AI</h2>
+      <p class="what" id="about-lede"></p>
+      <dl class="about" id="about"></dl>
+    </section>
+    <section class="panel" id="arena-panel">
+      <h2>AI vs AI arena</h2>
+      <p class="what">Watch two players play 20 quick games on the board above. They take turns starting,
+      and every game begins with a few random moves so that no two games are the same.</p>
+      <div class="row">
+        <label class="field">Player A <select id="side-a"></select></label>
+        <label class="field">Player B <select id="side-b"></select></label>
+        <label class="field">Random opening moves <select id="opening">
+          <option value="0">none</option>
+          <option value="2" selected>2</option>
+          <option value="4">4</option>
         </select></label>
       </div>
       <div class="row">
-        <button id="play">run 20 games</button>
-        <button id="stop" hidden>stop</button>
+        <button class="primary" id="play">Play 20 games</button>
+        <button id="stop" hidden>Stop</button>
+        <span class="fine" id="arena-progress" style="margin:0"></span>
       </div>
-      <div class="tiny" id="score">—</div>
-      <div class="ci" id="score-ci"></div>
-    </div>
-    <div class="panel">
-      <div class="tiny">the model's score for each legal column (green = the one it played)</div>
-      <div class="bars" id="bars"></div>
-    </div>
-    <div class="panel"><div class="tiny">self-test and log</div><pre id="log"></pre></div>
+      <div class="scoreboard" id="scoreboard" hidden>
+        <div><div class="num" id="sb-a">0</div><div class="who" id="sb-a-name"></div></div>
+        <div class="mid"><div class="num" id="sb-d">0</div><div class="who">draws</div></div>
+        <div><div class="num" id="sb-b">0</div><div class="who" id="sb-b-name"></div></div>
+      </div>
+      <p class="fine" id="score-ci"></p>
+    </section>
+    <details class="panel">
+      <summary>Technical checks</summary>
+      <p class="fine">On every load the page re-encodes reference positions and compares them with the
+      Python tooling's bytes — a wrong encoder would look exactly like a weak AI.</p>
+      <pre id="log"></pre>
+    </details>
   </aside>
-</div>
+</main>
 <script type="module">
 // ---- models --------------------------------------------------------------
 // Two encoders, because two generations of the model read the board differently:
@@ -100,42 +168,67 @@ server. Models: <a href="https://huggingface.co/precisit/onepass-c4">precisit/on
 const HF = "https://huggingface.co/precisit/onepass-c4/resolve";
 const params = new URLSearchParams(location.search);
 const CATALOGUE = {
-  // int8 weights: onnxruntime-web's WebGPU backend returns all-zero scores for this file (measured
-  // 2026-09-26, 1.30.0), so the human game runs it on wasm (~20 ms a move). The runtime check in
-  // engineFor would reject webgpu anyway; listing wasm only saves loading a session to find out.
-  "onepass-c4 v2": { url: params.get("v2") || `${HF}/main/onepass-c4-v2-int8.onnx`, encoder: "v2",
-                     ctxBytes: 44, optionBytes: 8, maxOptions: 7, humanProviders: ["wasm"],
-                     // WebGPU gets the fp32 file (29.7 MB): correct there, unlike the int8 one
-                     urlFor: { webgpu: params.get("v2") ? null : `${HF}/main/onepass-c4-v2.onnx` } },
-  "onepass-c4 v1 (previous)": { url: `${HF}/main/onepass-c4-8x24.onnx`, encoder: "v1",
-                                ctxBytes: 224, optionBytes: 24, maxOptions: 8 },
+  // wasm only in this release: onnxruntime-web's WebGPU backend returns all-zero scores for the int8
+  // file (measured 2026-09-26, 1.30.0). `?engine=webgpu` still works for testing: it loads the fp32
+  // file, and the runtime check in engineFor compares it with wasm first.
+  "onepass-c4 v2": {
+    label: "AI v2 (current)", url: params.get("v2") || `${HF}/main/onepass-c4-v2-int8.onnx`, encoder: "v2",
+    ctxBytes: 44, optionBytes: 8, maxOptions: 7,
+    urlFor: { webgpu: params.get("v2") ? null : `${HF}/main/onepass-c4-v2.onnx` },
+    lede: "The current model: the one this page is about.",
+    about: [
+      ["Model", "onepass-c4 v2"],
+      ["Size", "7.4 million parameters · 7.8 MB download"],
+      ["Runs", "in this tab, with WebAssembly — nothing leaves your device"],
+      ["How it decides", "one forward pass per move: a score for every free column, and it plays the highest"],
+      ["Trained on", "42 million positions, every column scored by an exact Connect Four solver"],
+      ["Strength", "beats a depth-4 search bot in 92 % of games — as often as a perfect player does in the same test"],
+    ],
+  },
+  "onepass-c4 v1 (previous)": {
+    label: "AI v1 (previous)", url: `${HF}/main/onepass-c4-8x24.onnx`, encoder: "v1",
+    ctxBytes: 224, optionBytes: 24, maxOptions: 8,
+    lede: "The previous model, kept for comparison: the same kind of model, trained on far less data.",
+    about: [
+      ["Model", "onepass-c4 v1"],
+      ["Size", "0.7 million parameters · 2.9 MB download"],
+      ["Runs", "in this tab, with WebAssembly — nothing leaves your device"],
+      ["How it decides", "one forward pass per move, like v2"],
+      ["Trained on", "about 80 thousand endgame positions only"],
+      ["Strength", "beats a depth-4 search bot in 3 % of games"],
+    ],
+  },
 };
 // `?b=<onnx-url>&benc=v1|v2` adds a model, so the arena can compare checkpoints without a rebuild.
 if (params.get("b")) {
   const enc = params.get("benc") === "v1" ? CATALOGUE["onepass-c4 v1 (previous)"] : CATALOGUE["onepass-c4 v2"];
-  CATALOGUE["extra model"] = { ...enc, url: params.get("b") };
+  CATALOGUE["extra model"] = { ...enc, label: "extra model", url: params.get("b"), urlFor: null, lede: params.get("b"), about: [] };
 }
 const DEFAULT_MODEL = "onepass-c4 v2";
+const labelOf = (name) => (name === "random" ? "Random player" : CATALOGUE[name].label);
 const W = 7, H = 6, R = 38, PAD = 18, GAP = 8;
 const CELL = 2 * R + GAP;
+const SVGNS = "http://www.w3.org/2000/svg";
+const $ = (id) => document.getElementById(id);
 
-const boardEl = document.getElementById("board");
-const statusEl = document.getElementById("status");
-const metaEl = document.getElementById("meta");
-const logEl = document.getElementById("log");
-const barsEl = document.getElementById("bars");
+const boardEl = $("board");
+const barsEl = $("bars");
+const logEl = $("log");
 const log = (line) => { logEl.textContent += line + "\n"; };
 
 // ---- game state ---------------------------------------------------------
 // grid[row][col], row 0 is the bottom row. `moves` is the move history in 1-indexed columns.
-let grid, moves, toMove, over, humanSide = "X";
+// X always moves first and plays red; O plays yellow.
+let grid, moves, toMove, over, humanSide = "X", lastMove = null, lastAI = null, mode = "loading";
+const colorOf = (p) => (p === "X" ? "red" : "yellow");
+const aiSide = () => (humanSide === "X" ? "O" : "X");
 
 function reset() {
   grid = Array.from({ length: H }, () => Array(W).fill(null));
   moves = [];
   toMove = "X";
   over = false;
-  renderBars({});
+  lastMove = null;
   buildBoard();
 }
 
@@ -148,25 +241,27 @@ function drop(col, player) {
   return row;
 }
 
-function winner() {
+// The winner and the four cells that won ([row, col] pairs), or null.
+function winLine() {
   const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
   for (let r = 0; r < H; r += 1) {
     for (let c = 0; c < W; c += 1) {
       const who = grid[r][c];
       if (!who) continue;
       for (const [dc, dr] of dirs) {
-        let n = 1;
-        while (n < 4) {
+        const cells = [[r, c]];
+        for (let n = 1; n < 4; n += 1) {
           const rr = r + dr * n, cc = c + dc * n;
           if (rr < 0 || rr >= H || cc < 0 || cc >= W || grid[rr][cc] !== who) break;
-          n += 1;
+          cells.push([rr, cc]);
         }
-        if (n === 4) return who;
+        if (cells.length === 4) return { who, cells };
       }
     }
   }
   return null;
 }
+const winner = () => winLine()?.who ?? null;
 
 const winsNow = (col, player) => {
   if (grid[H - 1][col] !== null) return false;
@@ -222,94 +317,7 @@ function encodeDecision(spec) {
   });
   return { cols, context, optionIds, optionMask };
 }
-// ---- the board, drawn as SVG -------------------------------------------
-const cellX = (col) => PAD + R + col * CELL;
-const cellY = (row) => PAD + R + (H - 1 - row) * CELL;
 
-function buildBoard() {
-  boardEl.innerHTML = "";
-  const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  bg.setAttribute("x", PAD / 2);
-  bg.setAttribute("y", PAD / 2);
-  bg.setAttribute("width", PAD + W * CELL);
-  bg.setAttribute("height", PAD + H * CELL);
-  bg.setAttribute("rx", 22);
-  bg.setAttribute("fill", "var(--board)");
-  boardEl.appendChild(bg);
-
-  for (let r = 0; r < H; r += 1) {
-    for (let c = 0; c < W; c += 1) {
-      const hole = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-      hole.setAttribute("cx", cellX(c));
-      hole.setAttribute("cy", cellY(r));
-      hole.setAttribute("r", R);
-      hole.setAttribute("fill", "var(--hole)");
-      boardEl.appendChild(hole);
-      if (grid[r][c]) paint(r, c, grid[r][c]);
-    }
-  }
-
-  for (let c = 0; c < W; c += 1) {
-    const hit = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    hit.setAttribute("class", "col-hit");
-    hit.setAttribute("x", cellX(c) - R);
-    hit.setAttribute("y", PAD / 2);
-    hit.setAttribute("width", 2 * R);
-    hit.setAttribute("height", H * CELL);
-    hit.addEventListener("click", () => humanMove(c));
-    boardEl.appendChild(hit);
-  }
-}
-
-function stone(row, col, player) {
-  const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-  dot.setAttribute("cx", cellX(col));
-  dot.setAttribute("cy", cellY(row));
-  dot.setAttribute("r", R - 2);
-  dot.setAttribute("fill", player === "X" ? "var(--x)" : "var(--o)");
-  dot.setAttribute("class", "stone");
-  dot.setAttribute("data-cell", `${row}-${col}`);
-  return dot;
-}
-
-function paint(row, col, player, animate = false) {
-  // NB: a class like `.stone.0-3` is an invalid CSS selector (leading digit) and makes
-  // querySelector throw, so the cell is addressed with a data attribute instead.
-  const existing = boardEl.querySelector(`.stone[data-cell="${row}-${col}"]`);
-  if (existing) existing.remove();
-  const dot = stone(row, col, player);
-  boardEl.insertBefore(dot, boardEl.querySelector(".col-hit"));
-  if (animate) {
-    const from = -(cellY(row) + R * 2);
-    dot.animate(
-      [{ transform: `translateY(${from}px)` }, { transform: "translateY(0)" }],
-      { duration: 300 + 12 * (row + 1), easing: "cubic-bezier(.35,0,.9,1)" },
-    );
-  }
-}
-
-// ---- the model's scores, one bar per legal column ----------------------
-function renderBars(scores, played = null) {
-  barsEl.innerHTML = "";
-  const values = Object.values(scores);
-  const max = values.length ? Math.max(...values) : 1;
-  const min = values.length ? Math.min(...values) : 0;
-  const span = max - min || 1;
-  for (let col = 0; col < W; col += 1) {
-    const bar = document.createElement("div");
-    bar.className = "bar" + (played === col ? " best" : "");
-    const fill = document.createElement("i");
-    const value = scores[col];
-    fill.style.height = value === undefined ? "0" : `${8 + 92 * ((value - min) / span)}%`;
-    const label = document.createElement("b");
-    label.textContent = value === undefined ? "" : value.toFixed(1);
-    const name = document.createElement("span");
-    name.textContent = col + 1;
-    bar.append(label, fill, name);
-    barsEl.appendChild(bar);
-  }
-}
-// ---- runtime -----------------------------------------------------------
 const ORT_URL = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
 let ort;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -415,89 +423,7 @@ async function evaluate(engine) {
   return { scores, best: cols[best], cols };
 }
 
-// ---- human vs model ----------------------------------------------------
-const opponentName = () => document.getElementById("opponent").value;
-const modelSide = () => (humanSide === "X" ? "O" : "X");
 
-const humanProviders = (name) => CATALOGUE[name].humanProviders || ["webgpu", "wasm"];
-const engineChoice = () => document.getElementById("engine").value;
-
-async function humanEngine() {
-  if (opponentName() === "random") return null;
-  const choice = engineChoice();
-  if (choice === "auto") return engineFor(opponentName(), humanProviders(opponentName()));
-  // an explicit choice is honoured (with the runtime check's verdict shown), falling back to wasm
-  // only if the provider cannot load at all
-  return engineFor(opponentName(), [choice, "wasm"], { force: true });
-}
-
-function engineMeta(engine) {
-  return `${engine.name} · ${engine.provider} (${engine.file}) · ${engine.lastMs.toFixed(1)} ms` +
-    (engine.warning ? ` · ${engine.warning}` : "");
-}
-
-async function advice() {
-  if (over) return;
-  statusEl.textContent = `your move — you are ${humanSide}`;
-  const engine = await humanEngine();
-  if (!engine) { renderBars({}); metaEl.textContent = "naive opponent: a uniformly random legal column"; return; }
-  const { scores, best } = await evaluate(engine);
-  renderBars(scores, best);
-  metaEl.textContent = `${engineMeta(engine)} · green = what the model would play for you`;
-}
-
-async function humanMove(col) {
-  if (over || toMove !== humanSide || grid[H - 1][col] !== null) return;
-  const row = drop(col, humanSide);
-  paint(row, col, humanSide, true);
-  if (finish()) return;
-  toMove = modelSide();
-  await opponentMove();
-  if (finish()) return;
-  toMove = humanSide;
-  await sleep(300);
-  await advice();
-}
-
-async function opponentMove() {
-  statusEl.textContent = "the opponent is thinking…";
-  await sleep(160);
-  const engine = await humanEngine();
-  let col;
-  if (!engine) {
-    const cols = legal();
-    col = cols[Math.floor(Math.random() * cols.length)];
-    barsEl.innerHTML = "";
-    metaEl.textContent = "naive opponent: a uniformly random legal column";
-  } else {
-    const { scores, best } = await evaluate(engine);
-    col = best;
-    renderBars(scores, best);
-    metaEl.textContent = `${engineMeta(engine)} · green = the model's own choice`;
-  }
-  const row = drop(col, modelSide());
-  paint(row, col, modelSide(), true);
-}
-
-function finish() {
-  const who = winner();
-  const full = legal().length === 0;
-  if (!who && !full) return false;
-  over = true;
-  statusEl.textContent = who === humanSide ? "you win 🎉" : who ? "the model wins" : "draw";
-  return true;
-}
-
-async function newGame() {
-  humanSide = document.getElementById("human-side").value;
-  reset();
-  if (humanSide === "O") {
-    toMove = "X";
-    await opponentMove();
-    toMove = "O";
-  }
-  await advice();
-}
 // ---- self-test: does this page's encoding match the Python one? --------
 // Reference rows come from the Python tooling (v1: make_selftest.py; v2: export_v2.py): the sha256
 // of the encoded int32 buffers, first 32 hex chars. If an encoder drifts by one byte its test
@@ -569,6 +495,273 @@ async function selfTest() {
   return allOk;
 }
 
+// ---- the board, drawn as SVG -------------------------------------------
+const cellX = (col) => PAD + R + col * CELL;
+const cellY = (row) => PAD + R + (H - 1 - row) * CELL;
+let ghost = null;
+
+function svg(tag, attrs) {
+  const el = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function buildBoard() {
+  boardEl.innerHTML = "";
+  boardEl.appendChild(svg("rect", { x: PAD / 2, y: PAD / 2, width: PAD + W * CELL, height: PAD + H * CELL, rx: 22, fill: "var(--board)" }));
+  for (let r = 0; r < H; r += 1) {
+    for (let c = 0; c < W; c += 1) {
+      boardEl.appendChild(svg("circle", { cx: cellX(c), cy: cellY(r), r: R, fill: "var(--hole)" }));
+      if (grid[r][c]) paint(r, c, grid[r][c]);
+    }
+  }
+  ghost = svg("circle", { r: R - 2, opacity: 0, "pointer-events": "none" });
+  boardEl.appendChild(ghost);
+  for (let c = 0; c < W; c += 1) {
+    const hit = svg("rect", { class: "col-hit", x: cellX(c) - R - GAP / 2, y: 0, width: CELL, height: 540 });
+    hit.addEventListener("click", () => humanMove(c));
+    hit.addEventListener("mouseenter", () => showGhost(c));
+    hit.addEventListener("mouseleave", () => { ghost.setAttribute("opacity", 0); });
+    boardEl.appendChild(hit);
+  }
+}
+
+const humanCanMove = () => mode === "human" && !over && toMove === humanSide;
+
+function setPlayable() { boardEl.classList.toggle("playable", humanCanMove()); }
+
+function showGhost(col) {
+  // a faint disc where the human's piece would land
+  if (!humanCanMove() || grid[H - 1][col] !== null) { ghost.setAttribute("opacity", 0); return; }
+  const row = grid.findIndex((r) => r[col] === null);
+  ghost.setAttribute("cx", cellX(col));
+  ghost.setAttribute("cy", cellY(row));
+  ghost.setAttribute("fill", `var(--${colorOf(humanSide)})`);
+  ghost.setAttribute("opacity", 0.35);
+}
+
+function paint(row, col, player, animate = false) {
+  // NB: a class like `.stone.0-3` is an invalid CSS selector (leading digit), so the cell is
+  // addressed with a data attribute instead.
+  const existing = boardEl.querySelector(`.stone[data-cell="${row}-${col}"]`);
+  if (existing) existing.remove();
+  const dot = svg("circle", { cx: cellX(col), cy: cellY(row), r: R - 2, fill: `var(--${colorOf(player)})`,
+                              class: "stone", "data-cell": `${row}-${col}` });
+  boardEl.insertBefore(dot, ghost);
+  if (animate) {
+    const from = -(cellY(row) + R * 2);
+    dot.animate([{ transform: `translateY(${from}px)` }, { transform: "translateY(0)" }],
+                { duration: 300 + 12 * (row + 1), easing: "cubic-bezier(.35,0,.9,1)" });
+  }
+  markLast(row, col);
+}
+
+function markLast(row, col) {
+  boardEl.querySelector(".last")?.remove();
+  lastMove = [row, col];
+  boardEl.insertBefore(svg("circle", { cx: cellX(col), cy: cellY(row), r: 7, fill: "#fff", opacity: 0.85,
+                                       class: "last", "pointer-events": "none" }), ghost);
+}
+
+function highlightWin(cells) {
+  const keep = new Set(cells.map(([r, c]) => `${r}-${c}`));
+  boardEl.querySelectorAll(".stone").forEach((s) => s.classList.toggle("dim", !keep.has(s.dataset.cell)));
+  boardEl.querySelector(".last")?.remove();
+  for (const [r, c] of cells) {
+    boardEl.insertBefore(svg("circle", { cx: cellX(c), cy: cellY(r), r: R - 5, fill: "none", stroke: "#fff",
+                                         "stroke-width": 5, "pointer-events": "none" }), ghost);
+  }
+}
+
+// ---- status bar -----------------------------------------------------------
+function setStatus(text, sub = "", disc = "none", result = null) {
+  $("status").textContent = text;
+  $("status-sub").textContent = sub;
+  $("status-disc").className = `disc ${disc}`;
+  $("statusbar").className = `statusbar${result ? ` result ${result}` : ""}`;
+  $("again").hidden = !result;
+  setPlayable();
+}
+
+// ---- the AI's view: one bar per column, aligned with the board -----------
+function preferences(scores) {
+  // softmax over the free columns: "how much the AI prefers each column", in percent
+  const cols = Object.keys(scores).map(Number);
+  const max = Math.max(...cols.map((c) => scores[c]));
+  const exp = Object.fromEntries(cols.map((c) => [c, Math.exp(scores[c] - max)]));
+  const total = cols.reduce((s, c) => s + exp[c], 0);
+  return Object.fromEntries(cols.map((c) => [c, exp[c] / total]));
+}
+
+function renderView(scores = null, best = null, kind = "played") {
+  barsEl.innerHTML = "";
+  barsEl.hidden = !scores; // no empty chart: the caption explains what will appear
+  const pref = scores ? preferences(scores) : {};
+  for (let c = 0; c < W; c += 1) {
+    const x = cellX(c) - R;
+    barsEl.appendChild(svg("text", { x: cellX(c), y: 146, "text-anchor": "middle", "font-size": 18, fill: "var(--muted)" })).textContent = c + 1;
+    if (!(c in pref)) {
+      if (scores) barsEl.appendChild(svg("text", { x: cellX(c), y: 112, "text-anchor": "middle", "font-size": 15, fill: "#b0bac7" })).textContent = "full";
+      continue;
+    }
+    const p = pref[c];
+    const h = 4 + 96 * p;
+    const isBest = c === best;
+    const fill = isBest ? (kind === "played" ? "var(--good)" : "#dbe6fb") : "#b9c9e8";
+    const bar = svg("rect", { x, y: 122 - h, width: 2 * R, height: h, rx: 5, fill });
+    if (isBest && kind === "hint") { bar.setAttribute("stroke", "var(--accent)"); bar.setAttribute("stroke-width", 3); bar.setAttribute("stroke-dasharray", "7 5"); }
+    barsEl.appendChild(bar);
+    const pct = p >= 0.995 ? "100%" : p < 0.01 ? "<1%" : `${Math.round(p * 100)}%`;
+    barsEl.appendChild(svg("text", { x: cellX(c), y: 116 - h, "text-anchor": "middle", "font-size": 17,
+                                     "font-weight": isBest ? 700 : 400, fill: "var(--ink)" })).textContent = pct;
+  }
+}
+
+function setCaption(text) { $("view-caption").textContent = text; }
+// ---- playing against the AI ------------------------------------------------
+// wasm only in this release; `?engine=webgpu|webnn` is a testing override (honoured even if the
+// runtime check disagrees, with the warning shown in the About panel).
+const engineOverride = ["webgpu", "webnn"].includes(params.get("engine")) ? params.get("engine") : null;
+const humanProviders = () => (engineOverride ? [engineOverride, "wasm"] : ["wasm"]);
+const opponentName = () => $("opponent").value;
+const moveTimes = {};
+
+async function humanEngine() {
+  const name = opponentName();
+  if (name === "random") return null;
+  const key = `${name}|${humanProviders().join(",")}|${!!engineOverride}`;
+  if (!engines.has(key)) setStatus(`Downloading ${labelOf(name)}…`, "one moment — it runs in your browser once loaded", "none");
+  return engineFor(name, humanProviders(), { force: !!engineOverride });
+}
+
+function renderLegend() {
+  const ai = labelOf(opponentName());
+  const you = `<span><span class="disc ${colorOf(humanSide)}"></span>You · ${colorOf(humanSide)}</span>`;
+  const them = `<span><span class="disc ${colorOf(aiSide())}"></span>${ai} · ${colorOf(aiSide())}</span>`;
+  $("legend").innerHTML = (humanSide === "X" ? you + them : them + you) + `<span style="color:var(--muted)">red moves first</span>`;
+}
+
+function renderAbout(engine = null) {
+  const name = opponentName();
+  if (name === "random") {
+    $("about-lede").textContent = "Not an AI: it drops its disc in a random free column. Useful to see how quickly you (or the AI, in the arena) can win.";
+    $("about").innerHTML = "";
+    return;
+  }
+  const spec = CATALOGUE[name];
+  $("about-lede").textContent = spec.lede;
+  const rows = [...spec.about];
+  const t = moveTimes[name];
+  rows.splice(3, 0, ["Move time", t ? `${(t.sum / t.n).toFixed(0)} ms per move on this device` : "shown after its first move"]);
+  if (engine && engine.provider !== "wasm") rows.push(["Engine", `${engine.provider} (testing override)${engine.warning ? " — " + engine.warning : ""}`]);
+  $("about").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+}
+
+function noteTime(engine) {
+  const t = (moveTimes[engine.name] ??= { sum: 0, n: 0 });
+  t.sum += engine.lastMs;
+  t.n += 1;
+}
+
+async function updateView() {
+  // what the "How the AI sees the board" panel shows, in every state
+  if (mode === "arena") { renderView(); setCaption("Hidden while the arena plays — the AIs are too fast to follow."); return; }
+  if (opponentName() === "random") { renderView(); setCaption("The random player doesn't score columns. Pick an AI opponent to see how it rates each move."); return; }
+  if (over) return; // keep the last picture at the end of a game
+  if (toMove === humanSide) {
+    if ($("hint").checked) {
+      const engine = await humanEngine();
+      const { scores, best } = await evaluate(engine);
+      renderView(scores, best, "hint");
+      setCaption(`Your turn. If the AI were playing your ${colorOf(humanSide)} discs, it would choose column ${best + 1} (dashed).`);
+    } else if (lastAI) {
+      renderView(lastAI.scores, lastAI.best, "played");
+      setCaption(`The AI's last move: column ${lastAI.best + 1}, the column it preferred most (green).`);
+    } else {
+      renderView();
+      setCaption("The AI hasn't moved yet. After each of its moves you'll see how much it preferred every column. Tick the box above to see what it would play for you.");
+    }
+  }
+}
+
+function yourTurn() {
+  setStatus(`Your turn — you are ${colorOf(humanSide)}`, "Click a column to drop your disc.", colorOf(humanSide));
+  updateView();
+}
+
+async function aiMove() {
+  const engine = await humanEngine();
+  setStatus(`${labelOf(opponentName())} is thinking…`, "", colorOf(aiSide()));
+  await sleep(250);
+  let col;
+  if (!engine) {
+    const cols = legal();
+    col = cols[Math.floor(Math.random() * cols.length)];
+    lastAI = null;
+  } else {
+    const { scores, best } = await evaluate(engine);
+    noteTime(engine);
+    renderAbout(engine);
+    col = best;
+    lastAI = { scores, best };
+    renderView(scores, best, "played");
+    setCaption(`The AI played column ${best + 1}: the column it preferred most (green). The other bars are its preference for the alternatives.`);
+  }
+  const row = drop(col, aiSide());
+  paint(row, col, aiSide(), true);
+}
+
+async function humanMove(col) {
+  if (!humanCanMove() || grid[H - 1][col] !== null) return;
+  const row = drop(col, humanSide);
+  ghost.setAttribute("opacity", 0);
+  paint(row, col, humanSide, true);
+  if (finish()) return;
+  toMove = aiSide();
+  setPlayable();
+  await aiMove();
+  if (finish()) return;
+  toMove = humanSide;
+  await sleep(250);
+  yourTurn();
+}
+
+function finish() {
+  const win = winLine();
+  const full = legal().length === 0;
+  if (!win && !full) return false;
+  over = true;
+  if (win) highlightWin(win.cells);
+  const four = win ? `Four in a row for ${colorOf(win.who)}.` : "";
+  if (!win) setStatus("It's a draw", "The board is full and nobody has four in a row.", "none", "draw");
+  else if (win.who === humanSide) {
+    const tip = opponentName() === "random" ? "Now try the real thing: pick AI v2 as your opponent."
+      : "Try letting the AI start — it is stronger then.";
+    setStatus("You win! 🎉", `${four} ${tip}`, colorOf(win.who), "win");
+  }
+  else setStatus(`${labelOf(opponentName())} wins`, `${four} Press "Play again" for a rematch.`, colorOf(win.who), "lose");
+  return true;
+}
+
+async function newGame() {
+  if (mode === "arena" && arenaRunning) return;
+  $("again").textContent = "Play again";
+  mode = "human";
+  setArenaLock(false);
+  reset();
+  lastAI = null;
+  renderLegend();
+  renderAbout();
+  renderView();
+  if (humanSide === "O") {
+    toMove = "X";
+    setCaption("");
+    await aiMove();
+    toMove = "O";
+  }
+  yourTurn();
+}
+
 // ---- arena: two players, as fast as the browser allows ------------------
 // Two deterministic models replay the same two games (one per colour) forever, and "20-0" would be
 // two games counted ten times. So every game starts with a few uniformly random moves (the same
@@ -586,7 +779,8 @@ function mulberry32(seed) {
 }
 
 function fastPaint(row, col, player) {
-  boardEl.insertBefore(stone(row, col, player), boardEl.querySelector(".col-hit"));
+  boardEl.insertBefore(svg("circle", { cx: cellX(col), cy: cellY(row), r: R - 2, fill: `var(--${colorOf(player)})`,
+                                       class: "stone", "data-cell": `${row}-${col}` }), ghost);
 }
 
 async function chooseCol(engine) {
@@ -628,43 +822,66 @@ function wilson(k, n, z = 1.96) {
   return [Math.max(0, c - h), Math.min(1, c + h)];
 }
 
+function setArenaLock(locked) {
+  for (const id of ["opponent", "reset", "side-a", "side-b", "opening", "hint"]) $(id).disabled = locked;
+  $("starter").querySelectorAll("button").forEach((b) => { b.disabled = locked; });
+  $("play").hidden = locked;
+  $("stop").hidden = !locked;
+}
+
 async function runArena(games, { nameA, nameB, opening, seed = null, paintIt = true } = {}) {
-  nameA ??= document.getElementById("side-a").value;
-  nameB ??= document.getElementById("side-b").value;
-  opening ??= Number(document.getElementById("opening").value);
+  nameA ??= $("side-a").value;
+  nameB ??= $("side-b").value;
+  opening ??= Number($("opening").value);
   rand = seed === null ? Math.random : mulberry32(seed);
+  mode = "arena";
+  setArenaLock(true);
+  updateView();
+  if (paintIt) $("statusbar").scrollIntoView({ behavior: "smooth", block: "start" });
+  setStatus("Loading the arena players…", "", "none");
   const engineA = await engineFor(nameA);
   const engineB = await engineFor(nameB);
   const tally = { A: 0, B: 0, draw: 0 };
   const lines = new Set();
+  $("scoreboard").hidden = false;
+  $("sb-a-name").textContent = `A · ${labelOf(nameA)}`;
+  $("sb-b-name").textContent = `B · ${labelOf(nameB)}`;
   arenaRunning = true;
-  statusEl.textContent = "arena running…";
-  metaEl.textContent = "";
-  renderBars({});
-  document.getElementById("play").hidden = true;
-  document.getElementById("stop").hidden = false;
   let played = 0;
   for (let game = 1; game <= games && arenaRunning; game += 1) {
-    const aFirst = game % 2 === 1; // alternate who opens
+    const aFirst = game % 2 === 1; // alternate who opens (and plays red)
+    setStatus(`Arena · game ${game} of ${games}`,
+      `red: ${labelOf(aFirst ? nameA : nameB)} · yellow: ${labelOf(aFirst ? nameB : nameA)} · they swap every game`,
+      "red");
     const { result, line } = await oneArenaGame(aFirst ? engineA : engineB, aFirst ? engineB : engineA, opening, paintIt);
     lines.add(line);
     played = game;
     if (result === "draw") tally.draw += 1;
     else if ((result === "X") === aFirst) tally.A += 1;
     else tally.B += 1;
-    const score = (tally.A + tally.draw / 2) / game;
-    const [lo, hi] = wilson(tally.A + tally.draw / 2, game);
-    document.getElementById("score").innerHTML =
-      `${game}/${games} — A <b>${nameA}</b>: ${tally.A} · B <b>${nameB}</b>: ${tally.B} · draws ${tally.draw}`;
-    document.getElementById("score-ci").textContent =
-      `A's score ${score.toFixed(2)} (95 % interval ${lo.toFixed(2)}–${hi.toFixed(2)}) · ${lines.size} distinct games · ${opening} random opening moves`;
+    $("sb-a").textContent = tally.A;
+    $("sb-b").textContent = tally.B;
+    $("sb-d").textContent = tally.draw;
+    $("arena-progress").textContent = `${game} of ${games} games`;
   }
-  document.getElementById("play").hidden = false;
-  document.getElementById("stop").hidden = true;
   arenaRunning = false;
   rand = Math.random;
-  over = true; // the board shows the last arena game; "New game" starts a human game again
-  statusEl.textContent = "arena finished — press New game to play yourself";
+  over = true;
+  const final = winLine();
+  if (final && paintIt) highlightWin(final.cells);
+  const score = (tally.A + tally.draw / 2) / Math.max(1, played);
+  const [lo, hi] = wilson(tally.A + tally.draw / 2, played);
+  $("score-ci").textContent =
+    `${lines.size} different games. A's score ${score.toFixed(2)} (a win counts 1, a draw ½); 95 % interval ${lo.toFixed(2)}–${hi.toFixed(2)}.`;
+  const lead = tally.A === tally.B ? "Level" : `${labelOf(tally.A > tally.B ? nameA : nameB)} wins the arena`;
+  setStatus(`${lead}: ${tally.A} – ${tally.B}`,
+    `${labelOf(nameA)} ${tally.A} · ${labelOf(nameB)} ${tally.B} · draws ${tally.draw} · the board shows the last game`,
+    "none", "arena");
+  $("again").textContent = "Play a game yourself";
+  setCaption("The arena is over. Press “Play a game yourself” above to play against the AI.");
+  setArenaLock(false);
+  $("play").hidden = false;
+  $("stop").hidden = true;
   const result = { nameA, nameB, games: played, opening, seed, ...tally, distinct: lines.size,
                    score: (tally.A + tally.draw / 2) / Math.max(1, played) };
   window.__arenaResult = result;
@@ -673,10 +890,10 @@ async function runArena(games, { nameA, nameB, opening, seed = null, paintIt = t
 
 // Headless hooks (tools/run_arena.py): the same code paths the buttons use.
 window.__runArena = (opts) => runArena(opts.games, { ...opts, paintIt: false });
-window.__providerOf = async (name, providers = null) => (await engineFor(name, providers || humanProviders(name))).provider;
-// providers = null means "what the human game uses for this model" (the auto engine setting)
+// providers = null means "what the human game uses"
+window.__providerOf = async (name, providers = null) => (await engineFor(name, providers || humanProviders())).provider;
 window.__chooseFor = async (name, board, providers = ["wasm"]) => {
-  const engine = await engineFor(name, providers || humanProviders(name));
+  const engine = await engineFor(name, providers || humanProviders());
   loadBoardV2(board);
   const { best } = await evaluate(engine);
   reset();
@@ -684,40 +901,51 @@ window.__chooseFor = async (name, board, providers = ["wasm"]) => {
 };
 
 function fillSelect(element, names) {
-  element.innerHTML = names.map((n) => `<option value="${n}">${n}</option>`).join("");
+  element.innerHTML = names.map((n) => `<option value="${n}">${labelOf(n)}</option>`).join("");
 }
 
 // ---- go ----------------------------------------------------------------
-document.getElementById("reset").addEventListener("click", () => newGame());
-document.getElementById("opponent").addEventListener("change", () => newGame());
-document.getElementById("human-side").addEventListener("change", () => newGame());
-document.getElementById("engine").addEventListener("change", () => newGame());
-document.getElementById("play").addEventListener("click", () => runArena(20));
-document.getElementById("stop").addEventListener("click", () => { arenaRunning = false; });
+$("reset").addEventListener("click", () => newGame());
+$("again").addEventListener("click", () => newGame());
+$("opponent").addEventListener("change", () => newGame());
+$("hint").addEventListener("change", () => { if (mode === "human" && !over) updateView(); });
+$("starter").addEventListener("click", (event) => {
+  const side = event.target?.dataset?.side;
+  if (!side) return;
+  humanSide = side;
+  $("starter").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.side === side)));
+  newGame();
+});
+$("play").addEventListener("click", () => runArena(20));
+$("stop").addEventListener("click", () => { arenaRunning = false; });
 
 reset();
+setArenaLock(true);
+$("stop").hidden = true;
+$("play").disabled = true;
+setStatus("Downloading the AI (7.8 MB)…", "It runs in your browser once loaded — nothing is sent to a server.", "none");
 (async () => {
   ort = await import(`${ORT_URL}ort.all.mjs`);
   ort.env.wasm.wasmPaths = ORT_URL;
   const names = Object.keys(CATALOGUE);
-  fillSelect(document.getElementById("opponent"), [...names, "random"]);
-  fillSelect(document.getElementById("side-a"), [...names, "random"]);
-  fillSelect(document.getElementById("side-b"), [...names, "random"]);
-  document.getElementById("opponent").value = DEFAULT_MODEL;
-  if (["wasm", "webgpu", "webnn"].includes(params.get("engine"))) document.getElementById("engine").value = params.get("engine");
-  document.getElementById("side-a").value = DEFAULT_MODEL;
-  document.getElementById("side-b").value = "onepass-c4 v1 (previous)";
+  fillSelect($("opponent"), [...names, "random"]);
+  fillSelect($("side-a"), [...names, "random"]);
+  fillSelect($("side-b"), [...names, "random"]);
+  $("opponent").value = DEFAULT_MODEL;
+  $("side-a").value = DEFAULT_MODEL;
+  $("side-b").value = "onepass-c4 v1 (previous)";
   PROBES.v1 = (await (await fetch("./selftest-rows.json")).json()).map((row) => ({
     drag: row.context.split("\n")[1].replace("DRAG", "").trim().split(/\s+/).filter(Boolean).map((t) => Number(t) - 1),
   }));
   PROBES.v2 = (await (await fetch("./selftest-v2.json")).json()).map((row) => ({ board: row.board }));
   const started = performance.now();
-  const engine = await engineFor(DEFAULT_MODEL, humanProviders(DEFAULT_MODEL));
+  const engine = await engineFor(DEFAULT_MODEL, humanProviders(), { force: !!engineOverride });
   log(`${engine.name} loaded in ${(performance.now() - started).toFixed(0)} ms on ${engine.provider}`);
   window.__selfTestOk = await selfTest();
+  $("play").disabled = false;
   await newGame();
   window.__ready = true;
-})().catch((error) => { statusEl.textContent = `could not start: ${error.message || error}`; });
+})().catch((error) => { setStatus("Could not start", String(error.message || error), "none"); });
 </script>
 </body>
 </html>

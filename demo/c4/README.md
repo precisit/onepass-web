@@ -1,7 +1,10 @@
 # demo/c4 — play Connect Four against a one-pass model
 
-Open `index.html` (or the published page) and click a column. Pick who moves first; pick your opponent:
-the current model (v2), the previous one (v1), or a random player.
+Open `index.html` (or the published page) and click a column. Red always moves first — choose whether
+that is you or the AI, and pick your opponent: the current model (v2), the previous one (v1), or a random
+player. The bar above the board says whose turn it is and, at the end, who won (the winning four is
+outlined). "How the AI sees the board" shows, after each AI move, how much it preferred every column
+(green = the move it played); tick the box to see what it would play in your place (dashed).
 
 Every model decision is **one forward pass**: the board goes in as 44 bytes (`1:` or `2:` for who
 opened, then 42 cells from the mover's point of view), the legal columns go in as short strings
@@ -54,7 +57,6 @@ in the log. This exists because the first v2 release looked like it "always play
 model returns all-zero scores on onnxruntime-web's WebGPU backend, and the human game used WebGPU while
 every check had run on wasm. v2 now runs on wasm (~20 ms a move).
 
-The **engine** selector overrides this for the human game: `wasm`, `webgpu` (loads the fp32 v2 file,
-29.7 MB, which is correct on WebGPU), or `webnn` (the browser's own route to CoreML / the NPU, where
-available). An explicit choice is honoured even if the runtime check disagrees — the page then shows a
-warning next to the move time instead of silently switching. `?engine=webgpu` in the URL sets it too.
+This release runs every model on WebAssembly. `?engine=webgpu` (or `webnn`) in the URL is a testing
+override: WebGPU loads the fp32 v2 file (29.7 MB, correct there), and the page shows a warning in the
+"About this AI" panel if the runtime check disagrees.
