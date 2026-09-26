@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect Four: one model, two runtimes</title>
+<style>
+  :root {
+    --board: #10457a; --hole: #eef2f7; --red: #e8503a; --yellow: #f7c948;
+    --ink: #16202e; --muted: #5f6b7c; --line: #e3e8ef; --bg: #f4f6f9; --accent: #2f6fe0;
+    --good: #16a34a; --panel: #fff; --gpu: #7c3aed; --wasm: #0e7490; --wasm32: #94a3b8;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; padding: 1.5rem 1.25rem 3rem; background: var(--bg); color: var(--ink);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { max-width: 1120px; margin: 0 auto 1.1rem; }
+  h1 { font-size: 1.45rem; margin: 0 0 .3rem; letter-spacing: -.01em; }
+  .lede { color: var(--muted); margin: 0; max-width: 48rem; }
+  .lede a, .fine a { color: var(--accent); }
+  .layout { max-width: 1120px; margin: 0 auto; display: grid; gap: 1.25rem;
+            grid-template-columns: minmax(0, 520px) minmax(0, 1fr); align-items: start; }
+  @media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+  .game, .side { display: flex; flex-direction: column; gap: .9rem; }
+  .panel { background: var(--panel); border-radius: .75rem; padding: .9rem 1.05rem;
+           box-shadow: 0 1px 3px rgba(16, 32, 56, .10); }
+  .panel h2 { font-size: .98rem; margin: 0 0 .15rem; }
+  .panel .what { color: var(--muted); font-size: .82rem; margin: 0 0 .65rem; }
+  .statusbar { display: flex; align-items: center; gap: .6rem; height: 4.6rem; padding: .5rem .9rem;
+               border-radius: .75rem; background: var(--panel); box-shadow: 0 1px 3px rgba(16,32,56,.10);
+               font-weight: 600; overflow: hidden; }
+  .statusbar .text { flex: 1; min-width: 0; }
+  .statusbar #status { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .statusbar .sub { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+                    min-height: 1.2em; line-height: 1.25; font-weight: 400; color: var(--muted); font-size: .82rem; }
+  .statusbar.result.win { background: #e7f7ec; box-shadow: inset 0 0 0 2px var(--good); }
+  .statusbar.result.lose { background: #fdeceb; box-shadow: inset 0 0 0 2px var(--red); }
+  .statusbar.result.draw { background: #eef2f7; box-shadow: inset 0 0 0 2px #9aa7b8; }
+  @media (max-width: 520px) { .statusbar { height: 5.4rem; } }
+  .disc { width: 1.35rem; height: 1.35rem; border-radius: 50%; flex: none; box-shadow: inset 0 -2px 0 rgba(0,0,0,.18); }
+  .disc.red { background: var(--red); } .disc.yellow { background: var(--yellow); } .disc.none { background: #cbd5e1; }
+  button { font: inherit; padding: .42rem .9rem; border-radius: .5rem; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  svg { display: block; width: 100%; height: auto; touch-action: manipulation; }
+  .col-hit { fill: transparent; }
+  .playable .col-hit { cursor: pointer; }
+  .stone.dim { opacity: .35; }
+  .row { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin: .45rem 0; }
+  .seg { display: inline-flex; border: 1px solid #cbd5e1; border-radius: .5rem; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: .35rem .75rem; background: #fff; }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+  .field { display: flex; flex-direction: column; gap: .2rem; font-size: .78rem; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+  th, td { text-align: left; padding: .3rem .4rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); font-size: .76rem; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tag { display: inline-block; width: .7rem; height: .7rem; border-radius: .2rem; margin-right: .4rem; vertical-align: -1px; }
+  .tag.gpu { background: var(--gpu); } .tag.wasm { background: var(--wasm); } .tag.wasm32 { background: var(--wasm32); }
+  .sub2 { display: block; color: var(--muted); font-size: .74rem; }
+  .bars { display: grid; grid-template-columns: max-content 1fr max-content; gap: .35rem .6rem; align-items: center; font-size: .84rem; margin-top: .6rem; }
+  .bar { height: .9rem; border-radius: .25rem; min-width: 2px; }
+  .bar.gpu { background: var(--gpu); } .bar.wasm { background: var(--wasm); } .bar.wasm32 { background: var(--wasm32); }
+  .big { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .fine { font-size: .78rem; color: var(--muted); margin: .7rem 0 0; }
+  details.panel summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
+  pre { margin: .5rem 0 0; font-size: .72rem; color: var(--muted); white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Connect Four: one model, two runtimes</h1>
+  <p class="lede">The same 7.4 M parameter Connect Four model as in the <a href="../c4/">main demo</a>, run two ways
+  in your browser: with onnxruntime-web on WebAssembly (what the main demo uses), and with
+  <a href="https://github.com/precisit/onepass-webgpu">onepass-webgpu</a>, a 22 KB WebGPU runtime written for
+  this kind of model. Play a game: the WebGPU runtime picks the moves, and every move is also timed on WebAssembly.</p>
+</header>
+<main class="layout">
+  <section class="game">
+    <div class="statusbar" id="statusbar" role="status" aria-live="polite">
+      <span class="disc none" id="status-disc"></span>
+      <span class="text"><span id="status">Loading…</span><span class="sub" id="status-sub"></span></span>
+      <button class="primary" id="again" hidden>Play again</button>
+    </div>
+    <svg id="board" viewBox="0 0 624 540" aria-label="Connect Four board"></svg>
+    <div class="panel">
+      <div class="row" style="margin:0">
+        <div class="field">Who starts?
+          <span class="seg" id="starter">
+            <button type="button" data-side="X" aria-pressed="true">You</button>
+            <button type="button" data-side="O" aria-pressed="false">The AI</button>
+          </span>
+        </div>
+        <button id="reset" style="margin-left:auto">New game</button>
+      </div>
+    </div>
+  </section>
+  <aside class="side">
+    <section class="panel">
+      <h2>Time per move</h2>
+      <p class="what">Every AI move is scored by all three engines, one after the other, on the same position.
+      Time is from the board going in to the scores coming back in JavaScript.</p>
+      <table>
+        <thead><tr><th>engine</th><th class="num">this move</th><th class="num">median</th><th class="num">moves</th></tr></thead>
+        <tbody id="move-times"></tbody>
+      </table>
+      <p class="fine" id="agree"></p>
+      <p class="fine">Moves in a game come with pauses, and the GPU and CPU slow down while idle, so single
+      moves here are slower and noisier than in the race below.</p>
+    </section>
+    <section class="panel">
+      <h2>Race: 200 positions</h2>
+      <p class="what">Each engine scores the same 200 positions from random games, one at a time, after 10 warm-up moves.</p>
+      <div class="row"><button class="primary" id="race" disabled>Run the race</button><span class="fine" id="race-progress" style="margin:0"></span></div>
+      <div class="bars" id="race-bars"></div>
+      <p class="fine" id="race-note"></p>
+    </section>
+    <section class="panel">
+      <h2>What gets loaded</h2>
+      <table>
+        <thead><tr><th>engine</th><th class="num">runtime code</th><th class="num">model file</th><th class="num">start-up</th></tr></thead>
+        <tbody id="loads"></tbody>
+      </table>
+      <p class="fine">Start-up = creating the engine from the downloaded file, plus its first move. The model
+      download itself depends on your network and is not included. onnxruntime-web starts its WebAssembly
+      once, in the first engine (int8). The WebGPU runtime reads its weights straight from the unchanged fp32
+      ONNX file. Code sizes are as decoded by the browser.</p>
+    </section>
+    <details class="panel" id="tech">
+      <summary>Technical checks</summary>
+      <p class="fine">Before the WebGPU runtime is trusted, it must agree with onnxruntime-web (wasm, same fp32
+      file) on reference positions. The encoder is also checked against the Python tooling's bytes.</p>
+      <pre id="log"></pre>
+    </details>
+  </aside>
+</main>
+<script type="module">
+import { Engine } from "./onepass-webgpu.js";
+
+const HF = "https://huggingface.co/precisit/onepass-c4/resolve/main";
+const ORT_URL = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
+const params = new URLSearchParams(location.search);
+const MODEL_F32 = params.get("model") || `${HF}/onepass-c4-v2.onnx`;
+const MODEL_INT8 = params.get("int8") || `${HF}/onepass-c4-v2-int8.onnx`;
+const PRECISION = params.get("precision") === "f16" ? "f16" : "f32";
+const SPEC = { ctxBytes: 44, optionBytes: 8, maxOptions: 7 };
+const W = 7, H = 6, R = 38, PAD = 18, GAP = 8;
+const CELL = 2 * R + GAP;
+const SVGNS = "http://www.w3.org/2000/svg";
+const $ = (id) => document.getElementById(id);
+const log = (line) => { $("log").textContent += line + "\n"; };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const median = (a) => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[(s.length - 1) >> 1] : NaN; };
+const pct = (a, p) => { const s = a.slice().sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+const mb = (bytes) => `${(bytes / 1e6).toFixed(1)} MB`;
+const kb = (bytes) => (bytes < 1e6 ? `${(bytes / 1e3).toFixed(0)} KB` : mb(bytes));
+const ms = (x) => (Number.isFinite(x) ? `${x < 10 ? x.toFixed(1) : x.toFixed(0)} ms` : "");
+
+// ---- game state (row 0 = bottom; X moves first and plays red) -------------
+let grid, moves, toMove, over, humanSide = "X", busy = false;
+const colorOf = (p) => (p === "X" ? "red" : "yellow");
+const aiSide = () => (humanSide === "X" ? "O" : "X");
+const legal = () => [...Array(W).keys()].filter((c) => grid[H - 1][c] === null);
+
+function reset() {
+  grid = Array.from({ length: H }, () => Array(W).fill(null));
+  moves = [];
+  toMove = "X";
+  over = false;
+  buildBoard();
+}
+
+function drop(col, player) {
+  const row = grid.findIndex((r) => r[col] === null);
+  grid[row][col] = player;
+  moves.push(col + 1);
+  return row;
+}
+
+function winLine() {
+  const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
+  for (let r = 0; r < H; r += 1) {
+    for (let c = 0; c < W; c += 1) {
+      const who = grid[r][c];
+      if (!who) continue;
+      for (const [dc, dr] of dirs) {
+        const cells = [[r, c]];
+        for (let n = 1; n < 4; n += 1) {
+          const rr = r + dr * n, cc = c + dc * n;
+          if (rr < 0 || rr >= H || cc < 0 || cc >= W || grid[rr][cc] !== who) break;
+          cells.push([rr, cc]);
+        }
+        if (cells.length === 4) return { who, cells };
+      }
+    }
+  }
+  return null;
+}
+
+// ---- the v2 encoder (the same bytes as the main demo and encode_c4.py) -----
+// context "1:" or "2:" (did the player to move open the game?) + 42 cells, bottom row first,
+// m = the mover's stone, t = the other player's; options "column k" for the free columns.
+function contextV2() {
+  const cells = [];
+  for (let r = 0; r < H; r += 1) {
+    for (let c = 0; c < W; c += 1) {
+      const v = grid[r][c];
+      cells.push(v === null ? "." : v === toMove ? "m" : "t");
+    }
+  }
+  return `${moves.length % 2 === 0 ? "1" : "2"}:${cells.join("")}`;
+}
+
+function byteIds(text, length) {
+  const out = new Int32Array(length);
+  const bytes = new TextEncoder().encode(text);
+  for (let i = 0; i < Math.min(bytes.length, length); i += 1) out[i] = bytes[i] + 1;
+  return out;
+}
+
+function encodeDecision() {
+  const cols = legal();
+  const context = byteIds(contextV2(), SPEC.ctxBytes);
+  const optionIds = new Int32Array(SPEC.maxOptions * SPEC.optionBytes);
+  const optionMask = new Int32Array(SPEC.maxOptions);
+  cols.forEach((col, i) => {
+    optionIds.set(byteIds(`column ${col + 1}`, SPEC.optionBytes), i * SPEC.optionBytes);
+    optionMask[i] = 1;
+  });
+  return { cols, context, optionIds, optionMask };
+}
+
+function loadBoardV2(board) {
+  // 42 values, bottom row first, 1 = the player to move, 2 = the other player
+  const stones = board.filter((v) => v > 0).length;
+  toMove = stones % 2 === 0 ? "X" : "O";
+  const other = toMove === "X" ? "O" : "X";
+  grid = Array.from({ length: H }, (_, r) => Array.from({ length: W }, (_, c) => {
+    const v = board[r * W + c];
+    return v === 0 ? null : v === 1 ? toMove : other;
+  }));
+  moves = Array(stones).fill(0); // only the count matters to the encoder
+}
+
+// ---- engines -----------------------------------------------------------------
+// Each engine: { key, label, detail, score(encoded) -> Float32Array of slot logits, times: [] }
+const engines = {};
+let ort;
+
+async function fetchBytes(url) {
+  const t = performance.now();
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  return { bytes, fetchMs: performance.now() - t };
+}
+
+async function makeGpuEngine(bytes) {
+  const plan = await (await fetch("./onepass-c4-v2.plan.json")).json();
+  const t = performance.now();
+  const engine = await Engine.load(plan, bytes, { precision: PRECISION });
+  const setupMs = performance.now() - t;
+  const info = engine.adapterInfo;
+  log(`WebGPU adapter: ${info.vendor || "?"} ${info.architecture || ""} ${info.description || ""}`.trim());
+  log(`onepass-webgpu: ${PRECISION}, ${engine.dispatchCount()} GPU dispatches per move, set-up ${setupMs.toFixed(0)} ms`);
+  return {
+    key: "gpu", label: "onepass-webgpu", detail: `WebGPU, ${PRECISION} weights`, css: "gpu", engine, setupMs,
+    bytes: bytes.length, times: [],
+    score: ({ context, optionIds, optionMask }) => engine.score(context, optionIds, optionMask),
+  };
+}
+
+async function makeOrtEngine(key, label, detail, css, bytes) {
+  const t = performance.now();
+  const session = await ort.InferenceSession.create(bytes, { executionProviders: ["wasm"] });
+  const setupMs = performance.now() - t;
+  return {
+    key, label, detail, css, session, setupMs, bytes: bytes.length, times: [],
+    score: async ({ context, optionIds, optionMask }) => {
+      const out = await session.run({
+        context_ids: new ort.Tensor("int32", context, [1, SPEC.ctxBytes]),
+        option_ids: new ort.Tensor("int32", optionIds, [1, SPEC.maxOptions, SPEC.optionBytes]),
+        option_mask: new ort.Tensor("int32", optionMask, [1, SPEC.maxOptions]),
+      });
+      return out[session.outputNames[0]].data;
+    },
+  };
+}
+
+/** Score the current position with one engine: the column it prefers, its scores, and the time. */
+async function decide(engine) {
+  const encoded = encodeDecision();
+  const t = performance.now();
+  const logits = await engine.score(encoded);
+  const elapsed = performance.now() - t;
+  let best = 0;
+  encoded.cols.forEach((_, i) => { if (logits[i] > logits[best]) best = i; });
+  return { col: encoded.cols[best], slot: best, logits: Array.from(logits).slice(0, encoded.cols.length), ms: elapsed };
+}
+
+// ---- checks ------------------------------------------------------------------
+async function sha32(buffer) {
+  const digest = await crypto.subtle.digest("SHA-256", buffer);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
+}
+
+async function encoderSelfTest(rows) {
+  let passed = 0;
+  for (const row of rows) {
+    loadBoardV2(row.board);
+    const e = encodeDecision();
+    const ok = contextV2() === row.context && JSON.stringify(e.cols) === JSON.stringify(row.legal)
+      && (await sha32(e.context.buffer)) === row.hashes.context
+      && (await sha32(e.optionIds.buffer)) === row.hashes.options
+      && (await sha32(e.optionMask.buffer)) === row.hashes.mask;
+    passed += ok ? 1 : 0;
+  }
+  log(`encoder self-test: ${passed}/${rows.length} reference positions reproduce the Python encoding`);
+  return passed === rows.length;
+}
+
+async function runtimeCheck(gpu, reference, rows) {
+  // the same fp32 file on wasm; f32 must match closely, f16 weights may drift a little
+  let maxDelta = 0, same = 0;
+  for (const row of rows) {
+    loadBoardV2(row.board);
+    const [a, b] = [await decide(reference), await decide(gpu)];
+    a.logits.forEach((v, i) => { maxDelta = Math.max(maxDelta, Math.abs(v - b.logits[i])); });
+    same += a.col === b.col ? 1 : 0;
+  }
+  const limit = PRECISION === "f32" ? 1e-3 : 5e-2;
+  const ok = same === rows.length && maxDelta < limit;
+  log(`runtime check (WebGPU vs wasm, same fp32 file): same move on ${same}/${rows.length}, max |score difference| ${maxDelta.toExponential(1)} ${ok ? "OK" : "FAILED"}`);
+  return ok;
+}
+
+// ---- the board ----------------------------------------------------------------
+const boardEl = $("board");
+const cellX = (col) => PAD + R + col * CELL;
+const cellY = (row) => PAD + R + (H - 1 - row) * CELL;
+let ghost = null;
+
+function svg(tag, attrs) {
+  const el = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function buildBoard() {
+  boardEl.innerHTML = "";
+  boardEl.appendChild(svg("rect", { x: PAD / 2, y: PAD / 2, width: PAD + W * CELL, height: PAD + H * CELL, rx: 22, fill: "var(--board)" }));
+  for (let r = 0; r < H; r += 1) for (let c = 0; c < W; c += 1) {
+    boardEl.appendChild(svg("circle", { cx: cellX(c), cy: cellY(r), r: R, fill: "var(--hole)" }));
+  }
+  ghost = svg("circle", { r: R - 2, opacity: 0, "pointer-events": "none" });
+  boardEl.appendChild(ghost);
+  for (let c = 0; c < W; c += 1) {
+    const hit = svg("rect", { class: "col-hit", x: cellX(c) - R - GAP / 2, y: 0, width: CELL, height: 540 });
+    hit.addEventListener("click", () => humanMove(c));
+    hit.addEventListener("mouseenter", () => showGhost(c));
+    hit.addEventListener("mouseleave", () => ghost.setAttribute("opacity", 0));
+    boardEl.appendChild(hit);
+  }
+}
+
+// the AI plays with WebGPU when it passed the runtime check, otherwise with the main demo's engine
+const player = () => engines.gpu ?? engines.wasm8;
+const humanCanMove = () => !busy && !over && toMove === humanSide && !!player();
+function setPlayable() { boardEl.classList.toggle("playable", !!humanCanMove()); }
+
+function showGhost(col) {
+  if (!humanCanMove() || grid[H - 1][col] !== null) { ghost.setAttribute("opacity", 0); return; }
+  const row = grid.findIndex((r) => r[col] === null);
+  ghost.setAttribute("cx", cellX(col));
+  ghost.setAttribute("cy", cellY(row));
+  ghost.setAttribute("fill", `var(--${colorOf(humanSide)})`);
+  ghost.setAttribute("opacity", 0.35);
+}
+
+function paint(row, col, player) {
+  const dot = svg("circle", { cx: cellX(col), cy: cellY(row), r: R - 2, fill: `var(--${colorOf(player)})`,
+                              class: "stone", "data-cell": `${row}-${col}` });
+  boardEl.insertBefore(dot, ghost);
+  dot.animate([{ transform: `translateY(${-(cellY(row) + R * 2)}px)` }, { transform: "translateY(0)" }],
+              { duration: 300 + 12 * (row + 1), easing: "cubic-bezier(.35,0,.9,1)" });
+  boardEl.querySelector(".last")?.remove();
+  boardEl.insertBefore(svg("circle", { cx: cellX(col), cy: cellY(row), r: 7, fill: "#fff", opacity: 0.85,
+                                       class: "last", "pointer-events": "none" }), ghost);
+}
+
+function highlightWin(cells) {
+  const keep = new Set(cells.map(([r, c]) => `${r}-${c}`));
+  boardEl.querySelectorAll(".stone").forEach((s) => s.classList.toggle("dim", !keep.has(s.dataset.cell)));
+  boardEl.querySelector(".last")?.remove();
+  for (const [r, c] of cells) {
+    boardEl.insertBefore(svg("circle", { cx: cellX(c), cy: cellY(r), r: R - 5, fill: "none", stroke: "#fff",
+                                         "stroke-width": 5, "pointer-events": "none" }), ghost);
+  }
+}
+
+function setStatus(text, sub = "", disc = "none", result = null) {
+  $("status").textContent = text;
+  $("status-sub").textContent = sub;
+  $("status-disc").className = `disc ${disc}`;
+  $("statusbar").className = `statusbar${result ? ` result ${result}` : ""}`;
+  $("again").hidden = !result;
+  setPlayable();
+}
+
+// ---- tables ---------------------------------------------------------------------
+const order = () => ["gpu", "wasm8", "wasm32"].filter((k) => engines[k]);
+
+function renderMoveTimes(last = {}) {
+  $("move-times").innerHTML = order().map((k) => {
+    const e = engines[k];
+    return `<tr><td><span class="tag ${e.css}"></span>${e.label}<span class="sub2">${e.detail}</span></td>
+      <td class="num">${ms(last[k])}</td><td class="num">${ms(median(e.times))}</td><td class="num">${e.times.length}</td></tr>`;
+  }).join("");
+}
+
+function renderLoads() {
+  $("loads").innerHTML = order().map((k) => {
+    const e = engines[k];
+    return `<tr><td><span class="tag ${e.css}"></span>${e.label}<span class="sub2">${e.detail}</span></td>
+      <td class="num">${e.codeBytes ? kb(e.codeBytes) : ""}</td><td class="num">${mb(e.bytes)}</td>
+      <td class="num">${ms(e.setupMs + (e.firstMs ?? 0))}</td></tr>`;
+  }).join("");
+}
+
+function codeSizes() {
+  // bytes of the JavaScript and WebAssembly each runtime needed (as decoded by the browser)
+  const entries = performance.getEntriesByType("resource");
+  const sum = (test) => entries.filter((e) => test(e.name)).reduce((s, e) => s + (e.decodedBodySize || 0), 0);
+  const gpu = sum((u) => u.endsWith("/onepass-webgpu.js"));
+  const ortBytes = sum((u) => u.includes("onnxruntime-web"));
+  if (engines.gpu) engines.gpu.codeBytes = gpu;
+  for (const k of ["wasm8", "wasm32"]) if (engines[k]) engines[k].codeBytes = ortBytes;
+}
+
+// ---- play -------------------------------------------------------------------------
+async function aiMove() {
+  setStatus("The AI is thinking…", "", colorOf(aiSide()));
+  // let the dropping disc land first: its animation renders on the same GPU and would be timed too
+  await sleep(450);
+  const last = {};
+  let chosen = null;
+  const picks = {};
+  for (const k of order()) {
+    const d = await decide(engines[k]);
+    engines[k].times.push(d.ms);
+    last[k] = d.ms;
+    picks[k] = d.col;
+    if (engines[k] === player()) chosen = d.col;
+  }
+  renderMoveTimes(last);
+  const agree = order().every((k) => picks[k] === chosen);
+  $("agree").textContent = agree ? `All engines chose column ${chosen + 1}.`
+    : `Engines chose: ${order().map((k) => `${engines[k].label} (${engines[k].detail}) column ${picks[k] + 1}`).join(", ")}. `
+      + "int8 weights are a slightly different model, so an occasional different choice is expected there.";
+  const row = drop(chosen, aiSide());
+  paint(row, chosen, aiSide());
+}
+
+async function humanMove(col) {
+  if (!humanCanMove() || grid[H - 1][col] !== null) return;
+  busy = true;
+  const row = drop(col, humanSide);
+  ghost.setAttribute("opacity", 0);
+  paint(row, col, humanSide);
+  if (!finish()) {
+    toMove = aiSide();
+    await aiMove();
+    if (!finish()) toMove = humanSide;
+  }
+  busy = false;
+  if (!over) setStatus("Your turn", "Click a column to drop your disc.", colorOf(humanSide));
+}
+
+function finish() {
+  const win = winLine();
+  if (!win && legal().length) return false;
+  over = true;
+  if (win) highlightWin(win.cells);
+  if (!win) setStatus("It's a draw", "The board is full.", "none", "draw");
+  else if (win.who === humanSide) setStatus("You win!", "Four in a row.", colorOf(win.who), "win");
+  else setStatus("The AI wins", "Press \"Play again\" for a rematch.", colorOf(win.who), "lose");
+  return true;
+}
+
+async function newGame() {
+  if (busy) return;
+  reset();
+  if (humanSide === "O") {
+    busy = true;
+    await aiMove();
+    toMove = "O";
+    busy = false;
+  }
+  setStatus("Your turn", "Click a column to drop your disc.", colorOf(humanSide));
+}
+
+// ---- race -------------------------------------------------------------------------
+function randomPositions(n, seed = 1) {
+  let s = seed >>> 0;
+  const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 2 ** 32; };
+  const boards = [];
+  while (boards.length < n) {
+    reset();
+    const plies = Math.floor(rnd() * 30);
+    let ok = true;
+    for (let i = 0; i < plies && ok; i += 1) {
+      const cols = legal();
+      drop(cols[Math.floor(rnd() * cols.length)], toMove);
+      toMove = toMove === "X" ? "O" : "X";
+      if (winLine() || !legal().length) ok = false;
+    }
+    if (ok) boards.push({ grid: grid.map((r) => r.slice()), moves: moves.slice(), toMove });
+  }
+  return boards;
+}
+
+async function race(n = 200, warm = 10) {
+  const saved = { grid, moves, toMove, over };
+  const positions = randomPositions(n + warm);
+  const result = {};
+  for (const k of order()) {
+    const times = [];
+    for (let i = 0; i < positions.length; i += 1) {
+      ({ grid, moves, toMove } = positions[i]);
+      const d = await decide(engines[k]);
+      if (i >= warm) times.push(d.ms);
+      if (i % 20 === 0) { $("race-progress").textContent = `${engines[k].label}, ${engines[k].detail}: ${i}/${positions.length}`; await sleep(0); }
+    }
+    result[k] = { median: median(times), p95: pct(times, 0.95), mean: times.reduce((a, b) => a + b, 0) / times.length };
+  }
+  ({ grid, moves, toMove, over } = saved);
+  $("race-progress").textContent = "";
+  const top = Math.max(...Object.values(result).map((r) => r.median));
+  $("race-bars").innerHTML = order().map((k) => `<span><span class="tag ${engines[k].css}"></span>${engines[k].label}
+      <span class="sub2">${engines[k].detail}</span></span>
+    <div class="bar ${engines[k].css}" style="width:${(100 * result[k].median) / top}%"></div>
+    <span class="num">${ms(result[k].median)}</span>`).join("");
+  if (result.gpu && result.wasm8) {
+    $("race-note").textContent = `Median per move. WebGPU is ${(result.wasm8.median / result.gpu.median).toFixed(1)}x faster than `
+      + `the main demo's engine (wasm, int8) here: ${(1000 / result.gpu.median).toFixed(0)} vs ${(1000 / result.wasm8.median).toFixed(0)} moves per second. `
+      + `p95: ${order().map((k) => `${engines[k].label} ${engines[k].detail} ${ms(result[k].p95)}`).join(", ")}.`;
+  }
+  return result;
+}
+
+// ---- parity (headless tests: the whole eval set through this page's own code path) --
+async function parity(base) {
+  const [boards, reference, logits] = await Promise.all([
+    fetch(`${base}boards.bin`).then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b)),
+    fetch(`${base}reference.json`).then((r) => r.json()),
+    fetch(`${base}logits.bin`).then((r) => r.arrayBuffer()).then((b) => new Float32Array(b)),
+  ]);
+  const n = Math.min(Number(params.get("n") ?? reference.positions), reference.positions);
+  let agree = 0, maxDiff = 0;
+  const flips = [];
+  const t = performance.now();
+  for (let p = 0; p < n; p += 1) {
+    loadBoardV2(boards.subarray(p * 42, p * 42 + 42));
+    const d = await decide(engines.gpu);
+    d.logits.forEach((v, i) => { maxDiff = Math.max(maxDiff, Math.abs(v - logits[p * 7 + i])); });
+    if (d.slot === reference.argmax[p]) agree += 1; else flips.push(p);
+  }
+  reset();
+  return { positions: n, argmax_agree: agree, flips: flips.slice(0, 50), max_abs_diff: maxDiff, ms_total: Math.round(performance.now() - t) };
+}
+
+// ---- go ----------------------------------------------------------------------------
+$("reset").addEventListener("click", () => newGame());
+$("again").addEventListener("click", () => newGame());
+$("starter").addEventListener("click", (event) => {
+  const side = event.target?.dataset?.side;
+  if (!side || busy) return;
+  humanSide = side;
+  $("starter").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.side === side)));
+  newGame();
+});
+$("race").addEventListener("click", async () => {
+  $("race").disabled = true;
+  busy = true;
+  setPlayable();
+  try { await race(); } finally { busy = false; $("race").disabled = false; setPlayable(); }
+});
+
+reset();
+setStatus("Loading…", "Downloading the model (29.7 MB fp32 for WebGPU, 7.8 MB int8 for WebAssembly).");
+(async () => {
+  const report = { precision: PRECISION };
+  const rows = await (await fetch("./selftest-v2.json")).json();
+  report.encoder_ok = await encoderSelfTest(rows);
+  ort = await import(`${ORT_URL}ort.wasm.min.mjs`); // the WebAssembly-only build
+  ort.env.wasm.wasmPaths = ORT_URL;
+  const [f32, int8] = await Promise.all([fetchBytes(MODEL_F32), params.has("parity") ? null : fetchBytes(MODEL_INT8)]);
+  log(`downloaded fp32 ${mb(f32.bytes.length)} in ${f32.fetchMs.toFixed(0)} ms` + (int8 ? `, int8 ${mb(int8.bytes.length)} in ${int8.fetchMs.toFixed(0)} ms` : ""));
+  // the int8 engine first: it pays onnxruntime-web's one-time WebAssembly start-up, as in the main demo
+  if (int8) engines.wasm8 = await makeOrtEngine("wasm8", "onnxruntime-web", "wasm, int8 (the main demo)", "wasm", int8.bytes);
+  engines.wasm32 = await makeOrtEngine("wasm32", "onnxruntime-web", "wasm, fp32 (same file as WebGPU)", "wasm32", f32.bytes);
+  let gpuError = null;
+  if (!navigator.gpu) gpuError = "this browser has no WebGPU";
+  else {
+    try {
+      const gpu = await makeGpuEngine(f32.bytes);
+      if (await runtimeCheck(gpu, engines.wasm32, rows)) engines.gpu = gpu;
+      else gpuError = "the WebGPU runtime disagreed with wasm on the check positions";
+      report.adapter = { vendor: gpu.engine.adapterInfo.vendor, architecture: gpu.engine.adapterInfo.architecture };
+    } catch (error) { gpuError = String(error.message || error); }
+  }
+  report.gpu_ok = !gpuError;
+  if (gpuError) {
+    log(`WebGPU not used: ${gpuError}`);
+    $("tech").open = true;
+  }
+  // first decision of each engine, for the start-up column
+  reset();
+  for (const k of order()) engines[k].firstMs = (await decide(engines[k])).ms;
+  codeSizes();
+  renderLoads();
+  renderMoveTimes();
+  if (params.has("parity") && engines.gpu) report.parity = await parity(params.get("parity"));
+  if (params.has("race")) report.race = await race(Number(params.get("race")) || 200);
+  window.__result = report;
+  if (gpuError) {
+    setStatus("WebGPU is not available here", `${gpuError}. You can still play, on WebAssembly.`, "none");
+    await sleep(2500);
+  }
+  $("race").disabled = false;
+  await newGame();
+})().catch((error) => {
+  setStatus("Could not start", String(error.message || error), "none");
+  window.__result = { error: String(error.stack || error) };
+});
+</script>
+</body>
+</html>
