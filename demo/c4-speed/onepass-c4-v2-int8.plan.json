@@ -1,0 +1,1111 @@
+{
+ "format": "onepass-plan/1",
+ "architecture": "onepass-scorer",
+ "config": {
+  "vocab": 257,
+  "width": 256,
+  "heads": 8,
+  "layers": 8,
+  "ff": 1024,
+  "rank": 256,
+  "context_len": 44,
+  "option_slots": 7,
+  "option_len": 8,
+  "eps": 1e-05,
+  "activation": "relu",
+  "norm_first": true
+ },
+ "model": {
+  "file": "onepass-c4-v2-int8.onnx",
+  "bytes": 7816833,
+  "sha256": "015523d297c8e4cce067428f3dbef0847d51d9008adbf7eeca8e35948d93e4a9"
+ },
+ "inputs": {
+  "context_ids": [
+   44
+  ],
+  "option_ids": [
+   7,
+   8
+  ],
+  "option_mask": [
+   7
+  ]
+ },
+ "tensors": {
+  "embedding": {
+   "initializer": "model.embedding.weight_quantized",
+   "transpose": false,
+   "shape": [
+    257,
+    256
+   ],
+   "quant": {
+    "dtype": "uint8",
+    "scale": 0.03403083235025406,
+    "zero_point": 123
+   }
+  },
+  "pos_context": {
+   "initializer": "onnx::Add_1983",
+   "transpose": false,
+   "shape": [
+    44,
+    256
+   ]
+  },
+  "pos_option": {
+   "initializer": "onnx::Add_2442",
+   "transpose": false,
+   "shape": [
+    8,
+    256
+   ]
+  },
+  "layer0.qkv.w": {
+   "initializer": "onnx::MatMul_1984_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    768
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0019271792843937874,
+    "zero_point": 0
+   }
+  },
+  "layer0.qkv.b": {
+   "initializer": "model.encoder.layers.0.self_attn.in_proj_bias",
+   "transpose": false,
+   "shape": [
+    768
+   ]
+  },
+  "layer0.out.w": {
+   "initializer": "model.encoder.layers.0.self_attn.out_proj.weight_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0013602727558463812,
+    "zero_point": 0
+   }
+  },
+  "layer0.out.b": {
+   "initializer": "model.encoder.layers.0.self_attn.out_proj.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer0.ff1.w": {
+   "initializer": "onnx::MatMul_2038_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    1024
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0022136010229587555,
+    "zero_point": 0
+   }
+  },
+  "layer0.ff1.b": {
+   "initializer": "model.encoder.layers.0.linear1.bias",
+   "transpose": false,
+   "shape": [
+    1024
+   ]
+  },
+  "layer0.ff2.w": {
+   "initializer": "onnx::MatMul_2039_quantized",
+   "transpose": false,
+   "shape": [
+    1024,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.002033413155004382,
+    "zero_point": 0
+   }
+  },
+  "layer0.ff2.b": {
+   "initializer": "model.encoder.layers.0.linear2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer0.norm1.w": {
+   "initializer": "model.encoder.layers.0.norm1.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer0.norm1.b": {
+   "initializer": "model.encoder.layers.0.norm1.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer0.norm2.w": {
+   "initializer": "model.encoder.layers.0.norm2.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer0.norm2.b": {
+   "initializer": "model.encoder.layers.0.norm2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer1.qkv.w": {
+   "initializer": "onnx::MatMul_2040_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    768
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0016345841577276587,
+    "zero_point": 0
+   }
+  },
+  "layer1.qkv.b": {
+   "initializer": "model.encoder.layers.1.self_attn.in_proj_bias",
+   "transpose": false,
+   "shape": [
+    768
+   ]
+  },
+  "layer1.out.w": {
+   "initializer": "model.encoder.layers.1.self_attn.out_proj.weight_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.001431998796761036,
+    "zero_point": 0
+   }
+  },
+  "layer1.out.b": {
+   "initializer": "model.encoder.layers.1.self_attn.out_proj.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer1.ff1.w": {
+   "initializer": "onnx::MatMul_2094_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    1024
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0018522863974794745,
+    "zero_point": 0
+   }
+  },
+  "layer1.ff1.b": {
+   "initializer": "model.encoder.layers.1.linear1.bias",
+   "transpose": false,
+   "shape": [
+    1024
+   ]
+  },
+  "layer1.ff2.w": {
+   "initializer": "onnx::MatMul_2095_quantized",
+   "transpose": false,
+   "shape": [
+    1024,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0014864782569929957,
+    "zero_point": 0
+   }
+  },
+  "layer1.ff2.b": {
+   "initializer": "model.encoder.layers.1.linear2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer1.norm1.w": {
+   "initializer": "model.encoder.layers.1.norm1.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer1.norm1.b": {
+   "initializer": "model.encoder.layers.1.norm1.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer1.norm2.w": {
+   "initializer": "model.encoder.layers.1.norm2.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer1.norm2.b": {
+   "initializer": "model.encoder.layers.1.norm2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer2.qkv.w": {
+   "initializer": "onnx::MatMul_2096_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    768
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.001692874589934945,
+    "zero_point": 0
+   }
+  },
+  "layer2.qkv.b": {
+   "initializer": "model.encoder.layers.2.self_attn.in_proj_bias",
+   "transpose": false,
+   "shape": [
+    768
+   ]
+  },
+  "layer2.out.w": {
+   "initializer": "model.encoder.layers.2.self_attn.out_proj.weight_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0014233405236154795,
+    "zero_point": 0
+   }
+  },
+  "layer2.out.b": {
+   "initializer": "model.encoder.layers.2.self_attn.out_proj.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer2.ff1.w": {
+   "initializer": "onnx::MatMul_2150_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    1024
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0017748757964000106,
+    "zero_point": 0
+   }
+  },
+  "layer2.ff1.b": {
+   "initializer": "model.encoder.layers.2.linear1.bias",
+   "transpose": false,
+   "shape": [
+    1024
+   ]
+  },
+  "layer2.ff2.w": {
+   "initializer": "onnx::MatMul_2151_quantized",
+   "transpose": false,
+   "shape": [
+    1024,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0016021121991798282,
+    "zero_point": 0
+   }
+  },
+  "layer2.ff2.b": {
+   "initializer": "model.encoder.layers.2.linear2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer2.norm1.w": {
+   "initializer": "model.encoder.layers.2.norm1.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer2.norm1.b": {
+   "initializer": "model.encoder.layers.2.norm1.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer2.norm2.w": {
+   "initializer": "model.encoder.layers.2.norm2.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer2.norm2.b": {
+   "initializer": "model.encoder.layers.2.norm2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer3.qkv.w": {
+   "initializer": "onnx::MatMul_2152_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    768
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0019301113206893206,
+    "zero_point": 0
+   }
+  },
+  "layer3.qkv.b": {
+   "initializer": "model.encoder.layers.3.self_attn.in_proj_bias",
+   "transpose": false,
+   "shape": [
+    768
+   ]
+  },
+  "layer3.out.w": {
+   "initializer": "model.encoder.layers.3.self_attn.out_proj.weight_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.001608255784958601,
+    "zero_point": 0
+   }
+  },
+  "layer3.out.b": {
+   "initializer": "model.encoder.layers.3.self_attn.out_proj.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer3.ff1.w": {
+   "initializer": "onnx::MatMul_2206_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    1024
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.001893290551379323,
+    "zero_point": 0
+   }
+  },
+  "layer3.ff1.b": {
+   "initializer": "model.encoder.layers.3.linear1.bias",
+   "transpose": false,
+   "shape": [
+    1024
+   ]
+  },
+  "layer3.ff2.w": {
+   "initializer": "onnx::MatMul_2207_quantized",
+   "transpose": false,
+   "shape": [
+    1024,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.001760039129294455,
+    "zero_point": 0
+   }
+  },
+  "layer3.ff2.b": {
+   "initializer": "model.encoder.layers.3.linear2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer3.norm1.w": {
+   "initializer": "model.encoder.layers.3.norm1.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer3.norm1.b": {
+   "initializer": "model.encoder.layers.3.norm1.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer3.norm2.w": {
+   "initializer": "model.encoder.layers.3.norm2.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer3.norm2.b": {
+   "initializer": "model.encoder.layers.3.norm2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer4.qkv.w": {
+   "initializer": "onnx::MatMul_2208_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    768
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0016856772126629949,
+    "zero_point": 0
+   }
+  },
+  "layer4.qkv.b": {
+   "initializer": "model.encoder.layers.4.self_attn.in_proj_bias",
+   "transpose": false,
+   "shape": [
+    768
+   ]
+  },
+  "layer4.out.w": {
+   "initializer": "model.encoder.layers.4.self_attn.out_proj.weight_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0014965239679440856,
+    "zero_point": 0
+   }
+  },
+  "layer4.out.b": {
+   "initializer": "model.encoder.layers.4.self_attn.out_proj.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer4.ff1.w": {
+   "initializer": "onnx::MatMul_2262_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    1024
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.001931185950525105,
+    "zero_point": 0
+   }
+  },
+  "layer4.ff1.b": {
+   "initializer": "model.encoder.layers.4.linear1.bias",
+   "transpose": false,
+   "shape": [
+    1024
+   ]
+  },
+  "layer4.ff2.w": {
+   "initializer": "onnx::MatMul_2263_quantized",
+   "transpose": false,
+   "shape": [
+    1024,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0017366543179377913,
+    "zero_point": 0
+   }
+  },
+  "layer4.ff2.b": {
+   "initializer": "model.encoder.layers.4.linear2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer4.norm1.w": {
+   "initializer": "model.encoder.layers.4.norm1.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer4.norm1.b": {
+   "initializer": "model.encoder.layers.4.norm1.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer4.norm2.w": {
+   "initializer": "model.encoder.layers.4.norm2.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer4.norm2.b": {
+   "initializer": "model.encoder.layers.4.norm2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer5.qkv.w": {
+   "initializer": "onnx::MatMul_2264_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    768
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0017976663075387478,
+    "zero_point": 0
+   }
+  },
+  "layer5.qkv.b": {
+   "initializer": "model.encoder.layers.5.self_attn.in_proj_bias",
+   "transpose": false,
+   "shape": [
+    768
+   ]
+  },
+  "layer5.out.w": {
+   "initializer": "model.encoder.layers.5.self_attn.out_proj.weight_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0013993000611662865,
+    "zero_point": 0
+   }
+  },
+  "layer5.out.b": {
+   "initializer": "model.encoder.layers.5.self_attn.out_proj.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer5.ff1.w": {
+   "initializer": "onnx::MatMul_2318_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    1024
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0019083580700680614,
+    "zero_point": 0
+   }
+  },
+  "layer5.ff1.b": {
+   "initializer": "model.encoder.layers.5.linear1.bias",
+   "transpose": false,
+   "shape": [
+    1024
+   ]
+  },
+  "layer5.ff2.w": {
+   "initializer": "onnx::MatMul_2319_quantized",
+   "transpose": false,
+   "shape": [
+    1024,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0022605478297919035,
+    "zero_point": 0
+   }
+  },
+  "layer5.ff2.b": {
+   "initializer": "model.encoder.layers.5.linear2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer5.norm1.w": {
+   "initializer": "model.encoder.layers.5.norm1.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer5.norm1.b": {
+   "initializer": "model.encoder.layers.5.norm1.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer5.norm2.w": {
+   "initializer": "model.encoder.layers.5.norm2.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer5.norm2.b": {
+   "initializer": "model.encoder.layers.5.norm2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer6.qkv.w": {
+   "initializer": "onnx::MatMul_2320_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    768
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0017772192368283868,
+    "zero_point": 0
+   }
+  },
+  "layer6.qkv.b": {
+   "initializer": "model.encoder.layers.6.self_attn.in_proj_bias",
+   "transpose": false,
+   "shape": [
+    768
+   ]
+  },
+  "layer6.out.w": {
+   "initializer": "model.encoder.layers.6.self_attn.out_proj.weight_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.001603270648047328,
+    "zero_point": 0
+   }
+  },
+  "layer6.out.b": {
+   "initializer": "model.encoder.layers.6.self_attn.out_proj.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer6.ff1.w": {
+   "initializer": "onnx::MatMul_2374_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    1024
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0019877247978001833,
+    "zero_point": 0
+   }
+  },
+  "layer6.ff1.b": {
+   "initializer": "model.encoder.layers.6.linear1.bias",
+   "transpose": false,
+   "shape": [
+    1024
+   ]
+  },
+  "layer6.ff2.w": {
+   "initializer": "onnx::MatMul_2375_quantized",
+   "transpose": false,
+   "shape": [
+    1024,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.002311629941686988,
+    "zero_point": 0
+   }
+  },
+  "layer6.ff2.b": {
+   "initializer": "model.encoder.layers.6.linear2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer6.norm1.w": {
+   "initializer": "model.encoder.layers.6.norm1.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer6.norm1.b": {
+   "initializer": "model.encoder.layers.6.norm1.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer6.norm2.w": {
+   "initializer": "model.encoder.layers.6.norm2.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer6.norm2.b": {
+   "initializer": "model.encoder.layers.6.norm2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer7.qkv.w": {
+   "initializer": "onnx::MatMul_2376_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    768
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.001996052684262395,
+    "zero_point": 0
+   }
+  },
+  "layer7.qkv.b": {
+   "initializer": "model.encoder.layers.7.self_attn.in_proj_bias",
+   "transpose": false,
+   "shape": [
+    768
+   ]
+  },
+  "layer7.out.w": {
+   "initializer": "model.encoder.layers.7.self_attn.out_proj.weight_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0016411346150562167,
+    "zero_point": 0
+   }
+  },
+  "layer7.out.b": {
+   "initializer": "model.encoder.layers.7.self_attn.out_proj.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer7.ff1.w": {
+   "initializer": "onnx::MatMul_2430_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    1024
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.002001506509259343,
+    "zero_point": 0
+   }
+  },
+  "layer7.ff1.b": {
+   "initializer": "model.encoder.layers.7.linear1.bias",
+   "transpose": false,
+   "shape": [
+    1024
+   ]
+  },
+  "layer7.ff2.w": {
+   "initializer": "onnx::MatMul_2431_quantized",
+   "transpose": false,
+   "shape": [
+    1024,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.002445525024086237,
+    "zero_point": 0
+   }
+  },
+  "layer7.ff2.b": {
+   "initializer": "model.encoder.layers.7.linear2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer7.norm1.w": {
+   "initializer": "model.encoder.layers.7.norm1.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer7.norm1.b": {
+   "initializer": "model.encoder.layers.7.norm1.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer7.norm2.w": {
+   "initializer": "model.encoder.layers.7.norm2.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "layer7.norm2.b": {
+   "initializer": "model.encoder.layers.7.norm2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "option_layer.qkv.w": {
+   "initializer": "onnx::MatMul_2443_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    768
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0017744986107572913,
+    "zero_point": 0
+   }
+  },
+  "option_layer.qkv.b": {
+   "initializer": "model.option_encoder.layers.0.self_attn.in_proj_bias",
+   "transpose": false,
+   "shape": [
+    768
+   ]
+  },
+  "option_layer.out.w": {
+   "initializer": "model.option_encoder.layers.0.self_attn.out_proj.weight_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0014748269459232688,
+    "zero_point": 0
+   }
+  },
+  "option_layer.out.b": {
+   "initializer": "model.option_encoder.layers.0.self_attn.out_proj.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "option_layer.ff1.w": {
+   "initializer": "onnx::MatMul_2497_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    1024
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0013373340480029583,
+    "zero_point": 0
+   }
+  },
+  "option_layer.ff1.b": {
+   "initializer": "model.option_encoder.layers.0.linear1.bias",
+   "transpose": false,
+   "shape": [
+    1024
+   ]
+  },
+  "option_layer.ff2.w": {
+   "initializer": "onnx::MatMul_2498_quantized",
+   "transpose": false,
+   "shape": [
+    1024,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.000910544884391129,
+    "zero_point": 0
+   }
+  },
+  "option_layer.ff2.b": {
+   "initializer": "model.option_encoder.layers.0.linear2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "option_layer.norm1.w": {
+   "initializer": "model.option_encoder.layers.0.norm1.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "option_layer.norm1.b": {
+   "initializer": "model.option_encoder.layers.0.norm1.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "option_layer.norm2.w": {
+   "initializer": "model.option_encoder.layers.0.norm2.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "option_layer.norm2.b": {
+   "initializer": "model.option_encoder.layers.0.norm2.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "head.q.w": {
+   "initializer": "onnx::MatMul_2504_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0013515811879187822,
+    "zero_point": 0
+   }
+  },
+  "head.k.w": {
+   "initializer": "onnx::MatMul_2505_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.001825544168241322,
+    "zero_point": 0
+   }
+  },
+  "head.v.w": {
+   "initializer": "onnx::MatMul_2506_quantized",
+   "transpose": false,
+   "shape": [
+    256,
+    256
+   ],
+   "quant": {
+    "dtype": "int8",
+    "scale": 0.0009212045115418732,
+    "zero_point": 0
+   }
+  },
+  "head.context_norm.w": {
+   "initializer": "model.head.context_norm.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "head.context_norm.b": {
+   "initializer": "model.head.context_norm.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "head.option_norm.w": {
+   "initializer": "model.head.option_norm.weight",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  },
+  "head.option_norm.b": {
+   "initializer": "model.head.option_norm.bias",
+   "transpose": false,
+   "shape": [
+    256
+   ]
+  }
+ },
+ "compile_check": {
+  "checked": 200,
+  "max_abs_logit_diff": 0.06644636517880498,
+  "argmax_agree": 197,
+  "weights": "quantized, dequantized (weight-only); ORT also quantizes activations"
+ }
+}

@@ -3,12 +3,13 @@
 The Connect Four model from [`demo/c4`](../c4/) (v2, 7.4 M parameters), run two ways in the same page:
 
 - **onnxruntime-web 1.30, WebAssembly**, as in the main demo (int8 file, 7.8 MB; also the fp32 file);
-- **[onepass-webgpu](https://github.com/precisit/onepass-webgpu)**, a WebGPU runtime of 22 KB (7 KB gzip)
-  written for one-pass models. It reads its weights straight from the unchanged fp32 ONNX file on
-  Hugging Face.
+- **[onepass-webgpu](https://github.com/precisit/onepass-webgpu)**, a WebGPU runtime of 24 KB (8 KB gzip)
+  written for one-pass models. It reads its weights straight from the unchanged ONNX files on Hugging Face:
+  the fp32 file, or the same int8 file as the main demo. With the int8 file the weights stay 8-bit on the GPU
+  (7.7 MB) and are unpacked inside the matrix multiply, with float math.
 
-Play a game: the WebGPU runtime picks the AI's moves, and every move is also scored and timed on
-WebAssembly. "Run the race" times each engine on the same 200 positions. The main demo is unchanged.
+Play a game: the WebGPU runtime picks the AI's moves, and every move is also scored and timed by the other
+engines. "Run the race" times each engine on the same 200 positions. The main demo is unchanged.
 
 While you think, the GPU and CPU slow down to save power, and the first decision after a pause would pay
 10 to 100 ms to wake them. So when you click, each engine gets one untimed warm-up run while your disc drops,
@@ -25,7 +26,9 @@ than in the race.
   result in `window.__result` (used headless by the onepass-webgpu tests). On all 17 325 positions of the
   Connect Four eval set, the f32 path chooses the same column as ONNX Runtime (CPU, fp32) every time
   (largest score difference 6.6e-5). With f16 weights (`?precision=f16`) 17 322 of 17 325 match; the other
-  three are near ties.
+  three are near ties. The int8 path (`?parity=<dir>&engine=gpu8`) chooses the same column as its reference, the
+  same weights dequantized in Python, on all 17 325 positions (largest score difference 1.7e-5). It matches
+  ONNX Runtime fp32 on 17 128 positions; onnxruntime-web's int8, which also rounds activations, on 17 004.
 
 ## Speed
 
@@ -42,14 +45,17 @@ Apple M1 Max, Chrome 153 (headless, Metal adapter), on a machine shared with oth
 | onnxruntime-web, wasm (the main demo) | int8 ONNX, 7.8 MB | 20.4 ms | 21.4 ms | 398 ms | 14.3 MB (3.7 MB) |
 | onnxruntime-web, wasm | fp32 ONNX, 29.7 MB | 19.5 ms | 21.2 ms | 385 ms | 14.3 MB (3.7 MB) |
 
-The WebGPU runtime downloads the fp32 file (29.7 MB) for now; reading the int8 file directly is planned.
+The int8 WebGPU row is new; its protocol numbers will be added with the next record (in the page's race
+it runs at about the same speed as the f32 row).
 The page's own "race" is a quick check, not the protocol: expect similar ratios, with more noise.
 
 ## Files
 
 - `index.html`: the page.
 - `onepass-webgpu.js`: the runtime, built from the commit named in its first line.
-- `onepass-c4-v2.plan.json`: the compiled plan (which ONNX initializer each weight comes from).
+- `onepass-c4-v2.plan.json`, `onepass-c4-v2-int8.plan.json`: the compiled plans (which ONNX initializer each weight
+  comes from).
+- `onepass-c4-v2-int8.probes.json`: expected int8 scores for the self-test positions (the int8 runtime check).
 - `selftest-v2.json`: reference encodings, the same file as in `demo/c4`.
 
 URL options: `?precision=f16` (f16 weights), `?model=<url>` and `?int8=<url>` (other model files).

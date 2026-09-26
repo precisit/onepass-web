@@ -8,7 +8,7 @@
   :root {
     --board: #10457a; --hole: #eef2f7; --red: #e8503a; --yellow: #f7c948;
     --ink: #16202e; --muted: #5f6b7c; --line: #e3e8ef; --bg: #f4f6f9; --accent: #2f6fe0;
-    --good: #16a34a; --panel: #fff; --gpu: #7c3aed; --wasm: #0e7490; --wasm32: #94a3b8;
+    --good: #16a34a; --panel: #fff; --gpu: #7c3aed; --gpu8: #c084fc; --wasm: #0e7490; --wasm32: #94a3b8;
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
@@ -56,11 +56,11 @@
   th { font-weight: 600; color: var(--muted); font-size: .76rem; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .tag { display: inline-block; width: .7rem; height: .7rem; border-radius: .2rem; margin-right: .4rem; vertical-align: -1px; }
-  .tag.gpu { background: var(--gpu); } .tag.wasm { background: var(--wasm); } .tag.wasm32 { background: var(--wasm32); }
+  .tag.gpu { background: var(--gpu); } .tag.gpu8 { background: var(--gpu8); } .tag.wasm { background: var(--wasm); } .tag.wasm32 { background: var(--wasm32); }
   .sub2 { display: block; color: var(--muted); font-size: .74rem; }
   .bars { display: grid; grid-template-columns: max-content 1fr max-content; gap: .35rem .6rem; align-items: center; font-size: .84rem; margin-top: .6rem; }
   .bar { height: .9rem; border-radius: .25rem; min-width: 2px; }
-  .bar.gpu { background: var(--gpu); } .bar.wasm { background: var(--wasm); } .bar.wasm32 { background: var(--wasm32); }
+  .bar.gpu { background: var(--gpu); } .bar.gpu8 { background: var(--gpu8); } .bar.wasm { background: var(--wasm); } .bar.wasm32 { background: var(--wasm32); }
   .big { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
   .fine { font-size: .78rem; color: var(--muted); margin: .7rem 0 0; }
   details.panel summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
@@ -72,8 +72,9 @@
   <h1>Connect Four: one model, two runtimes</h1>
   <p class="lede">The same 7.4 M parameter Connect Four model as in the <a href="../c4/">main demo</a>, run two ways
   in your browser: with onnxruntime-web on WebAssembly (what the main demo uses), and with
-  <a href="https://github.com/precisit/onepass-webgpu">onepass-webgpu</a>, a 22 KB WebGPU runtime written for
-  this kind of model. Play a game: the WebGPU runtime picks the moves, and every move is also timed on WebAssembly.</p>
+  <a href="https://github.com/precisit/onepass-webgpu">onepass-webgpu</a>, a 24 KB WebGPU runtime written for
+  this kind of model, which can read either the fp32 file or the same 7.8 MB int8 file as the main demo. Play a
+  game: the WebGPU runtime picks the moves, and every move is also timed on the other engines.</p>
 </header>
 <main class="layout">
   <section class="game">
@@ -98,7 +99,7 @@
   <aside class="side">
     <section class="panel">
       <h2>Time per move</h2>
-      <p class="what">Every AI move is scored by all three engines, one after the other, on the same position.
+      <p class="what">Every AI move is scored by all four engines, one after the other, on the same position.
       Time is from the board going in to the scores coming back in JavaScript.</p>
       <table>
         <thead><tr><th>engine</th><th class="num">this move</th><th class="num">median</th><th class="num">moves</th></tr></thead>
@@ -124,8 +125,10 @@
       </table>
       <p class="fine">Start-up = creating the engine from the downloaded file, plus its first move. The model
       download itself depends on your network and is not included. onnxruntime-web starts its WebAssembly
-      once, in the first engine (int8). The WebGPU runtime reads its weights straight from the unchanged fp32
-      ONNX file. Code sizes are as decoded by the browser.</p>
+      once, in the first engine (int8). The WebGPU runtime reads its weights straight from the unchanged ONNX
+      files; with the int8 file the weights stay 8-bit on the GPU and are unpacked inside the matrix multiply,
+      with float math (weights only: onnxruntime-web also rounds the activations to 8 bits, so their scores differ
+      slightly). Code sizes are as decoded by the browser.</p>
     </section>
     <details class="panel" id="tech">
       <summary>Technical checks</summary>
@@ -256,16 +259,17 @@ async function fetchBytes(url) {
   return { bytes, fetchMs: performance.now() - t };
 }
 
-async function makeGpuEngine(bytes) {
-  const plan = await (await fetch("./onepass-c4-v2.plan.json")).json();
+async function makeGpuEngine(key, planUrl, detail, css, bytes) {
+  const plan = await (await fetch(planUrl)).json();
   const t = performance.now();
   const engine = await Engine.load(plan, bytes, { precision: PRECISION });
   const setupMs = performance.now() - t;
   const info = engine.adapterInfo;
-  log(`WebGPU adapter: ${info.vendor || "?"} ${info.architecture || ""} ${info.description || ""}`.trim());
-  log(`onepass-webgpu: ${PRECISION}, ${engine.dispatchCount()} GPU dispatches per move, set-up ${setupMs.toFixed(0)} ms`);
+  if (key === "gpu") log(`WebGPU adapter: ${info.vendor || "?"} ${info.architecture || ""} ${info.description || ""}`.trim());
+  log(`onepass-webgpu (${detail}): weights ${engine.weightFormat}, ${mb(engine.weightBytes)} on the GPU, `
+    + `${engine.dispatchCount()} GPU dispatches per move, set-up ${setupMs.toFixed(0)} ms`);
   return {
-    key: "gpu", label: "onepass-webgpu", detail: `WebGPU, ${PRECISION} weights`, css: "gpu", engine, setupMs,
+    key, label: "onepass-webgpu", detail, css, engine, setupMs,
     bytes: bytes.length, times: [],
     score: ({ context, optionIds, optionMask }) => engine.score(context, optionIds, optionMask),
   };
@@ -332,6 +336,20 @@ async function runtimeCheck(gpu, reference, rows) {
   const limit = PRECISION === "f32" ? 1e-3 : 5e-2;
   const ok = same === rows.length && maxDelta < limit;
   log(`runtime check (WebGPU vs wasm, same fp32 file): same move on ${same}/${rows.length}, max |score difference| ${maxDelta.toExponential(1)} ${ok ? "OK" : "FAILED"}`);
+  return ok;
+}
+
+async function int8Check(gpu8, probes) {
+  // Weight-only int8 (f32 math) differs from onnxruntime-web's int8 on purpose (it also quantizes the
+  // activations), so the reference here is the expected scores from the Python model of the same plan.
+  let maxDelta = 0;
+  for (const row of probes.rows) {
+    loadBoardV2(row.board);
+    const d = await decide(gpu8);
+    row.logits.forEach((v, i) => { maxDelta = Math.max(maxDelta, Math.abs(v - d.logits[i])); });
+  }
+  const ok = maxDelta < (PRECISION === "f32" ? 1e-3 : 5e-2);
+  log(`runtime check (WebGPU int8 vs expected scores): max |score difference| ${maxDelta.toExponential(1)} on ${probes.rows.length} positions ${ok ? "OK" : "FAILED"}`);
   return ok;
 }
 
@@ -409,7 +427,7 @@ function setStatus(text, sub = "", disc = "none", result = null) {
 }
 
 // ---- tables ---------------------------------------------------------------------
-const order = () => ["gpu", "wasm8", "wasm32"].filter((k) => engines[k]);
+const order = () => ["gpu", "gpu8", "wasm8", "wasm32"].filter((k) => engines[k]);
 
 function renderMoveTimes(last = {}) {
   $("move-times").innerHTML = order().map((k) => {
@@ -434,7 +452,7 @@ function codeSizes() {
   const sum = (test) => entries.filter((e) => test(e.name)).reduce((s, e) => s + (e.decodedBodySize || 0), 0);
   const gpu = sum((u) => u.endsWith("/onepass-webgpu.js"));
   const ortBytes = sum((u) => u.includes("onnxruntime-web"));
-  if (engines.gpu) engines.gpu.codeBytes = gpu;
+  for (const k of ["gpu", "gpu8"]) if (engines[k]) engines[k].codeBytes = gpu;
   for (const k of ["wasm8", "wasm32"]) if (engines[k]) engines[k].codeBytes = ortBytes;
 }
 
@@ -468,7 +486,7 @@ async function aiMove() {
 
 async function warmUp() {
   for (const k of order()) {
-    if (k === "gpu") await engines.gpu.engine.wake();
+    if (engines[k].engine) await engines[k].engine.wake();
     else await engines[k].score(encodeDecision());
   }
 }
@@ -554,14 +572,15 @@ async function race(n = 200, warm = 10) {
     <span class="num">${ms(result[k].median)}</span>`).join("");
   if (result.gpu && result.wasm8) {
     $("race-note").textContent = `Median per move. WebGPU is ${(result.wasm8.median / result.gpu.median).toFixed(1)}x faster than `
-      + `the main demo's engine (wasm, int8) here: ${(1000 / result.gpu.median).toFixed(0)} vs ${(1000 / result.wasm8.median).toFixed(0)} moves per second. `
+      + `the main demo's engine (wasm, int8) here: ${(1000 / result.gpu.median).toFixed(0)} vs ${(1000 / result.wasm8.median).toFixed(0)} moves per second`
+      + (result.gpu8 ? `; with the int8 file ${ms(result.gpu8.median)}. ` : ". ")
       + `p95: ${order().map((k) => `${engines[k].label} ${engines[k].detail} ${ms(result[k].p95)}`).join(", ")}.`;
   }
   return result;
 }
 
 // ---- parity (headless tests: the whole eval set through this page's own code path) --
-async function parity(base) {
+async function parity(base, engine) {
   const [boards, reference, logits] = await Promise.all([
     fetch(`${base}boards.bin`).then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b)),
     fetch(`${base}reference.json`).then((r) => r.json()),
@@ -573,7 +592,7 @@ async function parity(base) {
   const t = performance.now();
   for (let p = 0; p < n; p += 1) {
     loadBoardV2(boards.subarray(p * 42, p * 42 + 42));
-    const d = await decide(engines.gpu);
+    const d = await decide(engine);
     d.logits.forEach((v, i) => { maxDiff = Math.max(maxDiff, Math.abs(v - logits[p * 7 + i])); });
     if (d.slot === reference.argmax[p]) agree += 1; else flips.push(p);
   }
@@ -599,14 +618,15 @@ $("race").addEventListener("click", async () => {
 });
 
 reset();
-setStatus("Loading…", "Downloading the model (29.7 MB fp32 for WebGPU, 7.8 MB int8 for WebAssembly).");
+setStatus("Loading…", "Downloading the model: the fp32 file (29.7 MB) and the int8 file (7.8 MB).");
 (async () => {
   const report = { precision: PRECISION };
   const rows = await (await fetch("./selftest-v2.json")).json();
   report.encoder_ok = await encoderSelfTest(rows);
   ort = await import(`${ORT_URL}ort.wasm.min.mjs`); // the WebAssembly-only build
   ort.env.wasm.wasmPaths = ORT_URL;
-  const [f32, int8] = await Promise.all([fetchBytes(MODEL_F32), params.has("parity") ? null : fetchBytes(MODEL_INT8)]);
+  const needInt8 = !params.has("parity") || params.get("engine") === "gpu8";
+  const [f32, int8] = await Promise.all([fetchBytes(MODEL_F32), needInt8 ? fetchBytes(MODEL_INT8) : null]);
   log(`downloaded fp32 ${mb(f32.bytes.length)} in ${f32.fetchMs.toFixed(0)} ms` + (int8 ? `, int8 ${mb(int8.bytes.length)} in ${int8.fetchMs.toFixed(0)} ms` : ""));
   // the int8 engine first: it pays onnxruntime-web's one-time WebAssembly start-up, as in the main demo
   if (int8) engines.wasm8 = await makeOrtEngine("wasm8", "onnxruntime-web", "wasm, int8 (the main demo)", "wasm", int8.bytes);
@@ -615,10 +635,16 @@ setStatus("Loading…", "Downloading the model (29.7 MB fp32 for WebGPU, 7.8 MB 
   if (!navigator.gpu) gpuError = "this browser has no WebGPU";
   else {
     try {
-      const gpu = await makeGpuEngine(f32.bytes);
+      const gpu = await makeGpuEngine("gpu", "./onepass-c4-v2.plan.json", `WebGPU, ${PRECISION} weights`, "gpu", f32.bytes);
       if (await runtimeCheck(gpu, engines.wasm32, rows)) engines.gpu = gpu;
       else gpuError = "the WebGPU runtime disagreed with wasm on the check positions";
       report.adapter = { vendor: gpu.engine.adapterInfo.vendor, architecture: gpu.engine.adapterInfo.architecture };
+      if (int8 && engines.gpu) {
+        const gpu8 = await makeGpuEngine("gpu8", "./onepass-c4-v2-int8.plan.json", "WebGPU, int8 weights (the main demo's file)", "gpu8", int8.bytes);
+        const probes = await (await fetch("./onepass-c4-v2-int8.probes.json")).json();
+        if (await int8Check(gpu8, probes)) engines.gpu8 = gpu8;
+        else log("WebGPU int8 not used: it disagreed with the expected scores");
+      }
     } catch (error) { gpuError = String(error.message || error); }
   }
   report.gpu_ok = !gpuError;
@@ -632,7 +658,8 @@ setStatus("Loading…", "Downloading the model (29.7 MB fp32 for WebGPU, 7.8 MB 
   codeSizes();
   renderLoads();
   renderMoveTimes();
-  if (params.has("parity") && engines.gpu) report.parity = await parity(params.get("parity"));
+  const parityEngine = engines[params.get("engine") ?? "gpu"];
+  if (params.has("parity") && parityEngine) report.parity = await parity(params.get("parity"), parityEngine);
   if (params.has("race")) report.race = await race(Number(params.get("race")) || 200);
   window.__result = report;
   if (gpuError) {

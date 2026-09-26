@@ -1,7 +1,7 @@
-/* onepass-webgpu 385727d (MIT), https://github.com/precisit/onepass-webgpu */
-var z=o=>`${o?`enable f16;
+/* onepass-webgpu 29a830c (MIT), https://github.com/precisit/onepass-webgpu */
+var j=o=>`${o?`enable f16;
 `:""}alias WT = ${o?"f16":"f32"};
-`,j=`
+`,F=`
 var<workgroup> red: array<f32, 256>;
 
 fn wsum(v: f32, t: u32) -> f32 {
@@ -15,14 +15,14 @@ fn wsum(v: f32, t: u32) -> f32 {
   workgroupBarrier();
   return out;
 }
-`,N=o=>`${z(o)}
+`,V=o=>`${j(o)}
 struct P { width: u32, seqLen: u32, idsOff: u32, embOff: u32, posOff: u32, lnW: u32, lnB: u32, eps: f32 }
 @group(0) @binding(0) var<uniform> p: P;
 @group(0) @binding(1) var<storage, read> W: array<WT>;
 @group(0) @binding(2) var<storage, read> ids: array<i32>;
 @group(0) @binding(3) var<storage, read_write> X: array<f32>;
 @group(0) @binding(4) var<storage, read_write> Y: array<f32>;
-${j}
+${F}
 @compute @workgroup_size(256)
 fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) t: u32) {
   let m = wg.x + wg.y * 65535u;
@@ -38,15 +38,24 @@ fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) t: u3
   let inv = 1.0 / sqrt(wsum(d * d, t) / f32(p.width) + p.eps);
   if (t < p.width) { Y[m * p.width + t] = d * inv * f32(W[p.lnW + t]) + f32(W[p.lnB + t]); }
 }
-`,Q=(o,e)=>`${z(o)}
-const RM = ${e.RM}u;
-const KS = ${e.KS}u;
-struct P { M: u32, N: u32, K: u32, wOff: u32, aBias: u32, p5: u32, p6: u32, p7: u32 }
+`,se=o=>o==="int8"?`
+fn unpack8(q: u32) -> vec4<f32> {
+  let s = bitcast<i32>(q);
+  return vec4<f32>(vec4<i32>((s << 24u) >> 24u, (s << 16u) >> 24u, (s << 8u) >> 24u, s >> 24u));
+}`:`
+fn unpack8(q: u32) -> vec4<f32> {
+  return vec4<f32>(f32(q & 255u), f32((q >> 8u) & 255u), f32((q >> 16u) & 255u), f32(q >> 24u));
+}`,H=(o,r)=>`${j(o)}
+const RM = ${r.RM}u;
+const KS = ${r.KS}u;
+struct P { M: u32, N: u32, K: u32, wOff: u32, aBias: u32, zp: f32, scale: f32, p7: u32 }
 @group(0) @binding(0) var<uniform> p: P;
-@group(0) @binding(1) var<storage, read> W: array<vec4<WT>>;
+${r.w8?`@group(0) @binding(1) var<storage, read> Q: array<u32>;
+${r.aSplits?"@group(0) @binding(4) var<storage, read> W: array<vec4<WT>>;":""}
+${se(r.w8)}`:"@group(0) @binding(1) var<storage, read> W: array<vec4<WT>>;"}
 @group(0) @binding(2) var<storage, read> A: array<f32>;
 @group(0) @binding(3) var<storage, read_write> Out: array<vec4<f32>>;
-var<workgroup> at: array<f32, ${e.RM*e.KS}>;
+var<workgroup> at: array<f32, ${r.RM*r.KS}>;
 
 @compute @workgroup_size(64)
 fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) t: u32) {
@@ -57,8 +66,8 @@ fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) t: u3
     let k = k0 + e % KS;
     var a = 0.0;
     if (m < p.M) {
-${e.aSplits===0?"      a = A[m * p.K + k];":`      for (var j = 0u; j < ${e.aSplits}u; j += 1u) { a += A[(j * p.M + m) * p.K + k]; }
-      a += f32(W[(p.aBias + k) / 4u][k % 4u]);${e.aRelu?`
+${r.aSplits===0?"      a = A[m * p.K + k];":`      for (var j = 0u; j < ${r.aSplits}u; j += 1u) { a += A[(j * p.M + m) * p.K + k]; }
+      a += f32(W[(p.aBias + k) / 4u][k % 4u]);${r.aRelu?`
       a = max(a, 0.0);`:""}`}
     }
     at[e] = a;
@@ -68,30 +77,30 @@ ${e.aSplits===0?"      a = A[m * p.K + k];":`      for (var j = 0u; j < ${e.aSpl
   if (n4 * 4u >= p.N) { return; }
   let stride = p.N / 4u;
   var acc: array<vec4<f32>, RM>;
-  var wi = p.wOff / 4u + k0 * stride + n4;
+  var wi = ${r.w8?"p.wOff":"p.wOff / 4u"} + k0 * stride + n4;
   for (var kk = 0u; kk < KS; kk += 1u) {
-    let w = vec4<f32>(W[wi]);
+    let w = ${r.w8?"unpack8(Q[wi]) - vec4<f32>(p.zp)":"vec4<f32>(W[wi])"};
     wi += stride;
     for (var r = 0u; r < RM; r += 1u) { acc[r] = fma(vec4<f32>(at[r * KS + kk]), w, acc[r]); }
   }
   let rows = min(RM, p.M - row0);
-  for (var r = 0u; r < rows; r += 1u) { Out[(wg.z * p.M + row0 + r) * stride + n4] = acc[r]; }
+  for (var r = 0u; r < rows; r += 1u) { Out[(wg.z * p.M + row0 + r) * stride + n4] = acc[r]${r.w8?" * p.scale":""}; }
 }
-`,X=(o,e)=>`${z(o)}
+`,J=(o,r)=>`${j(o)}
 struct P { M: u32, width: u32, bOff: u32, lnW: u32, lnB: u32, eps: f32, p6: u32, p7: u32 }
 @group(0) @binding(0) var<uniform> p: P;
 @group(0) @binding(1) var<storage, read> W: array<WT>;
 @group(0) @binding(2) var<storage, read> Part: array<f32>;
 @group(0) @binding(3) var<storage, read_write> X: array<f32>;
 @group(0) @binding(4) var<storage, read_write> Y: array<f32>;
-${j}
+${F}
 @compute @workgroup_size(256)
 fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) t: u32) {
   let m = wg.x + wg.y * 65535u;
   var x = 0.0;
   if (t < p.width) {
     var y = 0.0;
-    for (var j = 0u; j < ${e}u; j += 1u) { y += Part[(j * p.M + m) * p.width + t]; }
+    for (var j = 0u; j < ${r}u; j += 1u) { y += Part[(j * p.M + m) * p.width + t]; }
     x = X[m * p.width + t] + (y + f32(W[p.bOff + t]));
     X[m * p.width + t] = x;
   }
@@ -100,9 +109,9 @@ fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) t: u3
   let inv = 1.0 / sqrt(wsum(d * d, t) / f32(p.width) + p.eps);
   if (t < p.width) { Y[m * p.width + t] = d * inv * f32(W[p.lnW + t]) + f32(W[p.lnB + t]); }
 }
-`,V=(o,e,s,r)=>`${z(o)}
-const D = ${e}u;
-const LM = ${r}u;
+`,Z=(o,r,s,e)=>`${j(o)}
+const D = ${r}u;
+const LM = ${e}u;
 const QB = 8u;
 struct P { L: u32, idsOff: u32, width: u32, scale: f32, M: u32, bOff: u32, p6: u32, p7: u32 }
 @group(0) @binding(0) var<uniform> p: P;
@@ -110,10 +119,10 @@ struct P { L: u32, idsOff: u32, width: u32, scale: f32, M: u32, bOff: u32, p6: u
 @group(0) @binding(2) var<storage, read> Part: array<f32>;
 @group(0) @binding(3) var<storage, read> ids: array<i32>;
 @group(0) @binding(4) var<storage, read_write> O: array<f32>;
-var<workgroup> ks: array<f32, ${r*e}>;
-var<workgroup> vs: array<f32, ${r*e}>;
-var<workgroup> qs: array<f32, ${8*e}>;
-var<workgroup> sc: array<f32, ${8*r}>;
+var<workgroup> ks: array<f32, ${e*r}>;
+var<workgroup> vs: array<f32, ${e*r}>;
+var<workgroup> qs: array<f32, ${8*r}>;
+var<workgroup> sc: array<f32, ${8*e}>;
 
 fn proj(row: u32, col: u32) -> f32 {
   var a = 0.0;
@@ -163,14 +172,14 @@ fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) t: u3
     O[(base + query) * p.width + h * D + d] = o / sum;
   }
 }
-`,H=o=>`${z(o)}
+`,ee=o=>`${j(o)}
 struct P { L: u32, width: u32, idsOff: u32, lnW: u32, lnB: u32, eps: f32, p6: u32, p7: u32 }
 @group(0) @binding(0) var<uniform> p: P;
 @group(0) @binding(1) var<storage, read> W: array<WT>;
 @group(0) @binding(2) var<storage, read> X: array<f32>;
 @group(0) @binding(3) var<storage, read> ids: array<i32>;
 @group(0) @binding(4) var<storage, read_write> Y: array<f32>;
-${j}
+${F}
 @compute @workgroup_size(256)
 fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) t: u32) {
   let s = wg.x + wg.y * 65535u;
@@ -190,7 +199,7 @@ fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) t: u3
   let inv = 1.0 / sqrt(wsum(d * d, t) / f32(p.width) + p.eps);
   if (t < p.width) { Y[s * p.width + t] = d * inv * f32(W[p.lnW + t]) + f32(W[p.lnB + t]); }
 }
-`,J=(o,e,s)=>`
+`,re=(o,r,s)=>`
 struct P { Lc: u32, slots: u32, rank: u32, ctxOff: u32, maskOff: u32, scale: f32, Mq: u32, Mc: u32 }
 @group(0) @binding(0) var<uniform> p: P;
 @group(0) @binding(1) var<storage, read> q: array<f32>;
@@ -221,7 +230,7 @@ fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) t: u3
   if (l < p.Lc) {
     for (var r = part; r < p.rank; r += 4u) {
       var kk = 0.0;
-      for (var j = 0u; j < ${e}u; j += 1u) { kk += k[(j * p.Mc + krow + l) * p.rank + r]; }
+      for (var j = 0u; j < ${r}u; j += 1u) { kk += k[(j * p.Mc + krow + l) * p.rank + r]; }
       dot += qv[r] * kk;
     }
   }
@@ -257,4 +266,4 @@ fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) t: u3
     logits[qrow] = select(-3.4028234663852886e38, red[0] * p.scale, ids[p.maskOff + qrow] != 0);
   }
 }
-`;var C=class{constructor(e,s=0,r=e.length){this.buf=e;this.end=r;this.pos=s}pos;varint(){let e=0,s=1;for(;;){let r=this.buf[this.pos++];if(e+=(r&127)*s,r<128)return e;s*=128}}skip(e){if(e===0)this.varint();else if(e===1)this.pos+=8;else if(e===2){let s=this.varint();this.pos+=s}else if(e===5)this.pos+=4;else throw new Error(`onnx: unsupported wire type ${e}`)}};function I(o,e,s,r){let t=new C(o,e,s);for(;t.pos<s;){let n=t.varint(),u=Math.floor(n/8),i=n&7,p=t.pos;r(u,i,t),t.pos===p&&t.skip(i)}}function ir(o,e,s){let r={name:"",dims:[],dataType:0,bytes:new Uint8Array(0)},t=null;return I(o,e,s,(n,u,i)=>{if(n===1&&u===0)r.dims.push(i.varint());else if(n===1&&u===2){let p=i.varint()+i.pos;for(;i.pos<p;)r.dims.push(i.varint())}else if(n===2)r.dataType=i.varint();else if(n===8){let p=i.varint();r.name=new TextDecoder().decode(o.subarray(i.pos,i.pos+p)),i.pos+=p}else if(n===9){let p=i.varint();r.bytes=o.subarray(i.pos,i.pos+p),i.pos+=p}else if(n===4&&u===2){let p=i.varint();t=Array.from(new Float32Array(o.slice(i.pos,i.pos+p).buffer)),i.pos+=p}else if(n===14&&i.varint()===1)throw new Error("onnx: external data is not supported yet")}),t&&(r.bytes=new Uint8Array(new Float32Array(t).buffer)),r}function F(o){let e=o instanceof Uint8Array?o:new Uint8Array(o),s=new Map;return I(e,0,e.length,(r,t,n)=>{if(r!==7||t!==2)return;let u=n.varint(),i=n.pos+u;I(e,n.pos,i,(p,l,a)=>{if(p!==5||l!==2)return;let c=a.varint(),w=ir(e,a.pos,a.pos+c);s.set(w.name,w),a.pos+=c}),n.pos=i}),s}function Z(o,e=!1){if(o.dataType!==1)throw new Error(`onnx: ${o.name} is data type ${o.dataType}, expected float32`);let s=new Float32Array(o.bytes.byteLength/4);if(new Uint8Array(s.buffer).set(o.bytes),!e)return s;let[r,t]=o.dims,n=new Float32Array(s.length);for(let u=0;u<r;u+=1)for(let i=0;i<t;i+=1)n[i*r+u]=s[u*t+i];return n}var sr={splitTarget:4096,qkvSplitTarget:4096},D=256;function er(o,e,s,r){let n=Math.ceil(s/256)*64*Math.ceil(o/4),u=1;for(;u*2<=e/32&&n*u<r;)u*=2;return{S:u,RM:4}}function ar(o,e,s){let r=(u,i,p,l=s.splitTarget)=>er(u,i,p,l).S*u*p,t={p1:0,p2:0,pq:r(e*o.option_slots,o.width,o.rank)};for(let u of[e*o.context_len,e*o.option_slots*o.option_len])t.p1=Math.max(t.p1,r(u,o.width,3*o.width,s.qkvSplitTarget),r(u,o.width,o.ff)),t.p2=Math.max(t.p2,r(u,o.width,o.width),r(u,o.ff,o.width));let n=e*o.context_len;return t.p1=Math.max(t.p1,r(n,o.width,o.rank)),t.p2=Math.max(t.p2,r(n,o.width,o.rank)),t}function ur(o){let e=globalThis.Float16Array;if(e){let n=new e(o);return new Uint16Array(n.buffer,n.byteOffset,o.length)}let s=new Uint16Array(o.length),r=new Float32Array(1),t=new Uint32Array(r.buffer);for(let n=0;n<o.length;n+=1){r[0]=o[n];let u=t[0],i=u>>>16&32768,p=u>>>23&255,l=u&8388607;if(p===255){s[n]=i|31744|(l?512:0);continue}let a=p-127+15;if(a>=31){s[n]=i|31744;continue}if(a<=0){if(a<-10){s[n]=i;continue}l|=8388608;let h=14-a,m=l>>>h,g=l&(1<<h)-1,d=1<<h-1;(g>d||g===d&&m&1)&&(m+=1),s[n]=i|m;continue}let c=a<<10|l>>>13,w=l&8191;(w>4096||w===4096&&c&1)&&(c+=1),s[n]=i|c}return s}var rr=class o{constructor(e,s,r,t,n,u,i,p,l){this.device=e;this.adapterInfo=s;this.precision=r;this.maxBatch=t;this.tuning=l;this.config=n.config,this.offsets=i;let a=n.config,c=t,w=c*a.context_len,h=c*a.option_slots*a.option_len,m=Math.max(w,h),g=(b,B=0)=>e.createBuffer({size:Math.max(16,b*4),usage:GPUBufferUsage.STORAGE|B}),d={p1:0,p2:0,pq:0};for(let b=1;b<=c;b+=1){let B=ar(a,b,l);d.p1=Math.max(d.p1,B.p1),d.p2=Math.max(d.p2,B.p2),d.pq=Math.max(d.pq,B.pq)}this.buffers={weights:u,ids:g(c*(a.context_len+a.option_slots*a.option_len+a.option_slots),GPUBufferUsage.COPY_DST),xc:g(w*a.width),yc:g(w*a.width),xo:g(h*a.width),yo:g(h*a.width),att:g(m*a.width),p1:g(d.p1),p2:g(d.p2),pq:g(d.pq),pooled:g(c*a.option_slots*a.width),logits:g(c*a.option_slots,GPUBufferUsage.COPY_SRC)},this.staging=e.createBuffer({size:272,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST}),c*a.option_slots*4>256&&(this.staging.destroy(),this.staging=e.createBuffer({size:Math.ceil(c*a.option_slots*4/256)*256+16,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST})),p&&(this.querySet=e.createQuerySet({type:"timestamp",count:2}),this.queryBuffer=e.createBuffer({size:16,usage:GPUBufferUsage.QUERY_RESOLVE|GPUBufferUsage.COPY_SRC}))}config;lastGpuMs=null;programs=new Map;pipelines=new Map;offsets=new Map;buffers={};staging;querySet=null;queryBuffer=null;busy=Promise.resolve();static async load(e,s,r={}){if(e.format!=="onepass-plan/1"||e.architecture!=="onepass-scorer")throw new Error(`unsupported plan ${e.format} / ${e.architecture}`);if(!navigator.gpu)throw new Error("WebGPU is not available in this browser");let t=await navigator.gpu.requestAdapter({powerPreference:"high-performance"});if(!t)throw new Error("no WebGPU adapter");let n=t.info;if((/swiftshader|llvmpipe|software|basic render/i.test(`${n.vendor} ${n.architecture} ${n.description}`)||t.isFallbackAdapter===!0)&&!r.allowSoftware)throw new Error(`software WebGPU adapter (${n.vendor} ${n.architecture})`);let i=r.precision??"f32";if(i==="f16"&&!t.features.has("shader-f16"))throw new Error("this GPU has no shader-f16");let p=!!r.gpuTiming&&t.features.has("timestamp-query"),l=[];i==="f16"&&l.push("shader-f16"),p&&l.push("timestamp-query");let a=await t.requestDevice({requiredFeatures:l,requiredLimits:{maxStorageBufferBindingSize:t.limits.maxStorageBufferBindingSize,maxBufferSize:t.limits.maxBufferSize}}),c=F(s),w=[],h=new Map,m=0;for(let[q,_]of Object.entries(e.tensors)){let O=c.get(_.initializer);if(!O)throw new Error(`the ONNX file has no initializer ${_.initializer} (for ${q})`);let A=Z(O,_.transpose),R=_.shape.reduce((T,E)=>T*E,1);if(A.length!==R)throw new Error(`${q}: ${A.length} values, plan says ${R}`);h.set(q,m),w.push(A),m+=Math.ceil(A.length/64)*64}let g=new Float32Array(m);for(let[q,_]of w.entries())g.set(_,h.get(Object.keys(e.tensors)[q]));let d=i==="f16"?ur(g):g,b=a.createBuffer({size:d.byteLength,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});a.queue.writeBuffer(b,0,d.buffer,d.byteOffset,d.byteLength);let B={...sr,...r.tuning},G=new o(a,n,i,r.maxBatch??1,e,b,h,p,B);return G.program(1),await a.queue.onSubmittedWorkDone(),G}pipeline(e,s){let r=this.pipelines.get(e);return r||(r=this.device.createComputePipeline({layout:"auto",compute:{module:this.device.createShaderModule({code:s()}),entryPoint:"main"}}),this.pipelines.set(e,r)),r}off(e){let s=this.offsets.get(e);if(s===void 0)throw new Error(`plan has no tensor ${e}`);return s}program(e){let s=this.programs.get(e);if(s)return s;if(e<1||e>this.maxBatch)throw new Error(`batch ${e} outside 1..${this.maxBatch}`);let r=this.config,t=this.buffers,n=this.precision==="f16",u=[],i=[],p="",l=(f,v,x,P,U)=>{let k=new ArrayBuffer(32),$=new Uint32Array(k),y=new Float32Array(k);v.forEach((M,S)=>{$[S]=M});for(let[M,S]of Object.entries(x))y[Number(M)]=S;u.push(k),i.push({label:p,pipeline:f,buffers:P,groups:U})},a=0,c=e*r.context_len,w=c+e*r.option_slots*r.option_len,h=e*r.context_len,m=e*r.option_slots,g=m*r.option_len,d=this.pipeline(`embed${n}`,()=>N(n));p="embed",l(d,[r.width,r.context_len,a,this.off("embedding"),this.off("pos_context"),this.off("layer0.norm1.w"),this.off("layer0.norm1.b")],{7:r.eps},[t.weights,t.ids,t.xc,t.yc],[h,1,1]),l(d,[r.width,r.option_len,c,this.off("embedding"),this.off("pos_option"),this.off("option_layer.norm1.w"),this.off("option_layer.norm1.b")],{7:r.eps},[t.weights,t.ids,t.xo,t.yo],[g,1,1]);let b=(f,v,x,P,U,k,$=0,y=null,M=!1,S=this.tuning.splitTarget)=>{let{S:W,RM:L}=er(f,v,x,S),Y={RM:L,KS:v/W,aSplits:$,aRelu:M},nr=this.pipeline(`mm${n}${JSON.stringify(Y)}`,()=>Q(n,Y));return l(nr,[f,x,v,this.off(k),y?this.off(y):0],{},[t.weights,P,U],[Math.ceil(x/256),Math.ceil(f/L),W]),W},B=(f,v,x,P,U,k,$)=>{let y=this.pipeline(`rn${n}${x}`,()=>X(n,x));l(y,[f,r.width,this.off(P),this.off(`${$}.w`),this.off(`${$}.b`)],{5:r.eps},[t.weights,v,U,k],[f,1,1])},G=r.width/r.heads,q=Math.ceil(Math.max(r.context_len,r.option_len)/8)*8;if(q*G*2*4>13e3)throw new Error("sequence too long for the attention kernel");let _=(f,v,x,P,U,k,$)=>{let y=U*k;p=`${f}.qkv`;let M=b(y,r.width,3*r.width,P,t.p1,`${f}.qkv.w`,0,null,!1,this.tuning.qkvSplitTarget);p=`${f}.attention`,l(this.pipeline(`att${n}${M}`,()=>V(n,G,M,q)),[k,$,r.width,0,y,this.off(`${f}.qkv.b`)],{3:1/Math.sqrt(G)},[t.weights,t.p1,t.ids,t.att],[r.heads,U,Math.ceil(k/8)]),p=`${f}.out`;let S=b(y,r.width,r.width,t.att,t.p2,`${f}.out.w`);B(y,t.p2,S,`${f}.out.b`,x,P,`${f}.norm2`),p=`${f}.ff1`;let W=b(y,r.width,r.ff,P,t.p1,`${f}.ff1.w`);p=`${f}.ff2`;let L=b(y,r.ff,r.width,t.p1,t.p2,`${f}.ff2.w`,W,`${f}.ff1.b`,!0);B(y,t.p2,L,`${f}.ff2.b`,x,P,v)};for(let f=0;f<r.layers;f+=1)_(`layer${f}`,f+1<r.layers?`layer${f+1}.norm1`:"head.context_norm",t.xc,t.yc,e,r.context_len,a);_("option_layer","option_layer.norm1",t.xo,t.yo,m,r.option_len,c),p="pool",l(this.pipeline(`pool${n}`,()=>H(n)),[r.option_len,r.width,c,this.off("head.option_norm.w"),this.off("head.option_norm.b")],{5:r.eps},[t.weights,t.xo,t.ids,t.pooled],[m,1,1]),p="head.qkv";let O=b(m,r.width,r.rank,t.pooled,t.pq,"head.q.w"),A=b(h,r.width,r.rank,t.yc,t.p1,"head.k.w"),R=b(h,r.width,r.rank,t.yc,t.p2,"head.v.w");p="head",l(this.pipeline(`head${O}${A}${R}`,()=>J(O,A,R)),[r.context_len,r.option_slots,r.rank,a,w,0,m,h],{5:1/Math.sqrt(r.rank)},[t.pq,t.p1,t.p2,t.ids,t.logits],[r.option_slots,e,1]);let T=this.device.createBuffer({size:u.length*D,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),E=new Uint8Array(u.length*D);u.forEach((f,v)=>E.set(new Uint8Array(f),v*D)),this.device.queue.writeBuffer(T,0,E);let tr=i.map((f,v)=>({label:f.label,pipeline:f.pipeline,groups:f.groups,bindGroup:this.device.createBindGroup({layout:f.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:T,offset:v*D,size:32}},...f.buffers.map((x,P)=>({binding:P+1,resource:{buffer:x}}))]})})),K={batch:e,dispatches:tr,params:T};return this.programs.set(e,K),K}wake(e=1){let s=this.busy.then(async()=>{let r=this.program(e),t=this.device.createCommandEncoder(),n=t.beginComputePass();for(let u of r.dispatches)n.setPipeline(u.pipeline),n.setBindGroup(0,u.bindGroup),n.dispatchWorkgroups(...u.groups);n.end(),this.device.queue.submit([t.finish()]),await this.device.queue.onSubmittedWorkDone()});return this.busy=s.catch(()=>{}),s}dispatchCount(e=1){return this.program(e).dispatches.length}score(e,s,r,t=1){let n=this.busy.then(()=>this.run(e,s,r,t));return this.busy=n.catch(()=>{}),n}async run(e,s,r,t){let n=this.config,u=this.program(t),i=t*n.context_len,p=t*n.option_slots*n.option_len,l=t*n.option_slots;if(e.length!==i||s.length!==p||r.length!==l)throw new Error(`input sizes ${e.length}/${s.length}/${r.length}, expected ${i}/${p}/${l}`);let a=new Int32Array(i+p+l);a.set(e,0),a.set(s,i),a.set(r,i+p);let{device:c}=this;c.queue.writeBuffer(this.buffers.ids,0,a);let w=c.createCommandEncoder(),h=w.beginComputePass(this.querySet?{timestampWrites:{querySet:this.querySet,beginningOfPassWriteIndex:0,endOfPassWriteIndex:1}}:void 0);for(let b of u.dispatches)h.setPipeline(b.pipeline),h.setBindGroup(0,b.bindGroup),h.dispatchWorkgroups(...b.groups);h.end();let m=l*4,g=Math.ceil(m/256)*256;w.copyBufferToBuffer(this.buffers.logits,0,this.staging,0,m),this.querySet&&this.queryBuffer&&(w.resolveQuerySet(this.querySet,0,2,this.queryBuffer,0),w.copyBufferToBuffer(this.queryBuffer,0,this.staging,g,16)),c.queue.submit([w.finish()]),await this.staging.mapAsync(GPUMapMode.READ);let d=new Float32Array(this.staging.getMappedRange(0,m).slice(0));if(this.querySet){let b=new BigUint64Array(this.staging.getMappedRange(g,16));this.lastGpuMs=Number(b[1]-b[0])/1e6}return this.staging.unmap(),d}async profile(e,s,r,t=1){if(!this.querySet)throw new Error("profile() needs gpuTiming and an adapter with timestamp-query");await this.score(e,s,r,t);let{device:n}=this,u=this.program(t),i=u.dispatches.length,p=n.createQuerySet({type:"timestamp",count:2*i}),l=n.createBuffer({size:16*i,usage:GPUBufferUsage.QUERY_RESOLVE|GPUBufferUsage.COPY_SRC}),a=n.createBuffer({size:16*i,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST}),c=n.createCommandEncoder();u.dispatches.forEach((m,g)=>{let d=c.beginComputePass({timestampWrites:{querySet:p,beginningOfPassWriteIndex:2*g,endOfPassWriteIndex:2*g+1}});d.setPipeline(m.pipeline),d.setBindGroup(0,m.bindGroup),d.dispatchWorkgroups(...m.groups),d.end()}),c.resolveQuerySet(p,0,2*i,l,0),c.copyBufferToBuffer(l,0,a,0,16*i),n.queue.submit([c.finish()]),await a.mapAsync(GPUMapMode.READ);let w=new BigUint64Array(a.getMappedRange()),h={};return u.dispatches.forEach((m,g)=>{let d=m.label.replace(/^layer\d+\./,"layer.");h[d]=(h[d]??0)+Number(w[2*g+1]-w[2*g])/1e6}),a.unmap(),p.destroy(),l.destroy(),a.destroy(),h}destroy(){for(let e of Object.values(this.buffers))e.destroy();for(let e of this.programs.values())e.params.destroy();this.staging.destroy(),this.querySet?.destroy(),this.queryBuffer?.destroy(),this.device.destroy()}};export{rr as Engine,F as readInitializers};
+`;var K=class{constructor(r,s=0,e=r.length){this.buf=r;this.end=e;this.pos=s}pos;varint(){let r=0,s=1;for(;;){let e=this.buf[this.pos++];if(r+=(e&127)*s,e<128)return r;s*=128}}skip(r){if(r===0)this.varint();else if(r===1)this.pos+=8;else if(r===2){let s=this.varint();this.pos+=s}else if(r===5)this.pos+=4;else throw new Error(`onnx: unsupported wire type ${r}`)}};function Y(o,r,s,e){let t=new K(o,r,s);for(;t.pos<s;){let n=t.varint(),a=Math.floor(n/8),i=n&7,u=t.pos;e(a,i,t),t.pos===u&&t.skip(i)}}function ue(o,r,s){let e={name:"",dims:[],dataType:0,bytes:new Uint8Array(0)},t=null;return Y(o,r,s,(n,a,i)=>{if(n===1&&a===0)e.dims.push(i.varint());else if(n===1&&a===2){let u=i.varint()+i.pos;for(;i.pos<u;)e.dims.push(i.varint())}else if(n===2)e.dataType=i.varint();else if(n===8){let u=i.varint();e.name=new TextDecoder().decode(o.subarray(i.pos,i.pos+u)),i.pos+=u}else if(n===9){let u=i.varint();e.bytes=o.subarray(i.pos,i.pos+u),i.pos+=u}else if(n===4&&a===2){let u=i.varint();t=Array.from(new Float32Array(o.slice(i.pos,i.pos+u).buffer)),i.pos+=u}else if(n===14&&i.varint()===1)throw new Error("onnx: external data is not supported yet")}),t&&(e.bytes=new Uint8Array(new Float32Array(t).buffer)),e}function N(o){let r=o instanceof Uint8Array?o:new Uint8Array(o),s=new Map;return Y(r,0,r.length,(e,t,n)=>{if(e!==7||t!==2)return;let a=n.varint(),i=n.pos+a;Y(r,n.pos,i,(u,l,c)=>{if(u!==5||l!==2)return;let w=c.varint(),p=ue(r,c.pos,c.pos+w);s.set(p.name,p),c.pos+=w}),n.pos=i}),s}function te(o,r=!1){if(o.dataType!==1)throw new Error(`onnx: ${o.name} is data type ${o.dataType}, expected float32`);let s=new Float32Array(o.bytes.byteLength/4);if(new Uint8Array(s.buffer).set(o.bytes),!r)return s;let[e,t]=o.dims,n=new Float32Array(s.length);for(let a=0;a<e;a+=1)for(let i=0;i<t;i+=1)n[i*e+a]=s[a*t+i];return n}function ne(o,r,s){if(o.dataType!==2&&o.dataType!==3)throw new Error(`onnx: ${o.name} is not int8 or uint8`);let e=o.dataType===3?new Int8Array(o.bytes.buffer,o.bytes.byteOffset,o.bytes.byteLength):o.bytes,t=new Float32Array(e.length);for(let n=0;n<e.length;n+=1)t[n]=Math.fround(Math.fround(e[n]-s)*r);return t}var fe={splitTarget:4096,qkvSplitTarget:4096},I=256;function ie(o,r,s,e){let n=Math.ceil(s/256)*64*Math.ceil(o/4),a=1;for(;a*2<=r/32&&n*a<e;)a*=2;return{S:a,RM:4}}function pe(o,r,s){let e=(a,i,u,l=s.splitTarget)=>ie(a,i,u,l).S*a*u,t={p1:0,p2:0,pq:e(r*o.option_slots,o.width,o.rank)};for(let a of[r*o.context_len,r*o.option_slots*o.option_len])t.p1=Math.max(t.p1,e(a,o.width,3*o.width,s.qkvSplitTarget),e(a,o.width,o.ff)),t.p2=Math.max(t.p2,e(a,o.width,o.width),e(a,o.ff,o.width));let n=r*o.context_len;return t.p1=Math.max(t.p1,e(n,o.width,o.rank)),t.p2=Math.max(t.p2,e(n,o.width,o.rank)),t}function le(o){let r=globalThis.Float16Array;if(r){let n=new r(o);return new Uint16Array(n.buffer,n.byteOffset,o.length)}let s=new Uint16Array(o.length),e=new Float32Array(1),t=new Uint32Array(e.buffer);for(let n=0;n<o.length;n+=1){e[0]=o[n];let a=t[0],i=a>>>16&32768,u=a>>>23&255,l=a&8388607;if(u===255){s[n]=i|31744|(l?512:0);continue}let c=u-127+15;if(c>=31){s[n]=i|31744;continue}if(c<=0){if(c<-10){s[n]=i;continue}l|=8388608;let g=14-c,h=l>>>g,y=l&(1<<g)-1,b=1<<g-1;(y>b||y===b&&h&1)&&(h+=1),s[n]=i|h;continue}let w=c<<10|l>>>13,p=l&8191;(p>4096||p===4096&&w&1)&&(w+=1),s[n]=i|w}return s}var oe=class o{constructor(r,s,e,t,n,a,i,u,l,c=null,w=new Map){this.device=r;this.adapterInfo=s;this.precision=e;this.maxBatch=t;this.tuning=l;this.packed=w;this.config=n.config,this.offsets=i;let p=n.config,g=t,h=g*p.context_len,y=g*p.option_slots*p.option_len,b=Math.max(h,y),d=(B,M=0)=>r.createBuffer({size:Math.max(16,B*4),usage:GPUBufferUsage.STORAGE|M}),v={p1:0,p2:0,pq:0};for(let B=1;B<=g;B+=1){let M=pe(p,B,l);v.p1=Math.max(v.p1,M.p1),v.p2=Math.max(v.p2,M.p2),v.pq=Math.max(v.pq,M.pq)}this.buffers={weights:a,weights8:c??d(4),ids:d(g*(p.context_len+p.option_slots*p.option_len+p.option_slots),GPUBufferUsage.COPY_DST),xc:d(h*p.width),yc:d(h*p.width),xo:d(y*p.width),yo:d(y*p.width),att:d(b*p.width),p1:d(v.p1),p2:d(v.p2),pq:d(v.pq),pooled:d(g*p.option_slots*p.width),logits:d(g*p.option_slots,GPUBufferUsage.COPY_SRC)},this.staging=r.createBuffer({size:272,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST}),g*p.option_slots*4>256&&(this.staging.destroy(),this.staging=r.createBuffer({size:Math.ceil(g*p.option_slots*4/256)*256+16,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST})),u&&(this.querySet=r.createQuerySet({type:"timestamp",count:2}),this.queryBuffer=r.createBuffer({size:16,usage:GPUBufferUsage.QUERY_RESOLVE|GPUBufferUsage.COPY_SRC}))}config;get weightFormat(){return this.packed.size?`int8 (${this.precision} for the rest)`:this.precision}get weightBytes(){return this.buffers.weights.size+(this.packed.size?this.buffers.weights8.size:0)}lastGpuMs=null;programs=new Map;pipelines=new Map;offsets=new Map;buffers={};staging;querySet=null;queryBuffer=null;busy=Promise.resolve();static async load(r,s,e={}){if(r.format!=="onepass-plan/1"||r.architecture!=="onepass-scorer")throw new Error(`unsupported plan ${r.format} / ${r.architecture}`);if(!navigator.gpu)throw new Error("WebGPU is not available in this browser");let t=await navigator.gpu.requestAdapter({powerPreference:"high-performance"});if(!t)throw new Error("no WebGPU adapter");let n=t.info;if((/swiftshader|llvmpipe|software|basic render/i.test(`${n.vendor} ${n.architecture} ${n.description}`)||t.isFallbackAdapter===!0)&&!e.allowSoftware)throw new Error(`software WebGPU adapter (${n.vendor} ${n.architecture})`);let i=e.precision??"f32";if(i==="f16"&&!t.features.has("shader-f16"))throw new Error("this GPU has no shader-f16");let u=!!e.gpuTiming&&t.features.has("timestamp-query"),l=[];i==="f16"&&l.push("shader-f16"),u&&l.push("timestamp-query");let c=await t.requestDevice({requiredFeatures:l,requiredLimits:{maxStorageBufferBindingSize:t.limits.maxStorageBufferBindingSize,maxBufferSize:t.limits.maxBufferSize}}),w=N(s),p=[],g=new Map,h=new Map,y=[],b=0,d=0;for(let[x,m]of Object.entries(r.tensors)){let _=w.get(m.initializer);if(!_)throw new Error(`the ONNX file has no initializer ${m.initializer} (for ${x})`);let W=m.shape.reduce((f,P)=>f*P,1);if(m.quant&&x!=="embedding"){if(m.transpose||m.shape.length!==2||m.shape[1]%4!==0)throw new Error(`${x}: unsupported 8-bit layout`);if(_.bytes.byteLength!==W)throw new Error(`${x}: ${_.bytes.byteLength} bytes, plan says ${W}`);h.set(x,{offsetWords:d/4,kind:m.quant.dtype,scale:m.quant.scale,zeroPoint:m.quant.zero_point}),y.push(_.bytes),d+=Math.ceil(_.bytes.byteLength/256)*256;continue}let O=m.quant?ne(_,m.quant.scale,m.quant.zero_point):te(_,m.transpose);if(O.length!==W)throw new Error(`${x}: ${O.length} values, plan says ${W}`);g.set(x,b),p.push({name:x,data:O}),b+=Math.ceil(O.length/64)*64}let v=new Float32Array(b);for(let{name:x,data:m}of p)v.set(m,g.get(x));let B=i==="f16"?le(v):v,M=c.createBuffer({size:B.byteLength,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});c.queue.writeBuffer(M,0,B.buffer,B.byteOffset,B.byteLength);let z=null;if(d>0){z=c.createBuffer({size:d,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});let x=0;for(let m of y){let _=new Uint8Array(Math.ceil(m.byteLength/4)*4);_.set(m),c.queue.writeBuffer(z,x,_),x+=Math.ceil(m.byteLength/256)*256}}let C={...fe,...e.tuning},E=new o(c,n,i,e.maxBatch??1,r,M,g,u,C,z,h);return E.program(1),await c.queue.onSubmittedWorkDone(),E}pipeline(r,s){let e=this.pipelines.get(r);return e||(e=this.device.createComputePipeline({layout:"auto",compute:{module:this.device.createShaderModule({code:s()}),entryPoint:"main"}}),this.pipelines.set(r,e)),e}off(r){let s=this.offsets.get(r);if(s===void 0)throw new Error(`plan has no tensor ${r}`);return s}program(r){let s=this.programs.get(r);if(s)return s;if(r<1||r>this.maxBatch)throw new Error(`batch ${r} outside 1..${this.maxBatch}`);let e=this.config,t=this.buffers,n=this.precision==="f16",a=[],i=[],u="",l=(f,P,q,U,A)=>{let $=new ArrayBuffer(32),G=new Uint32Array($),k=new Float32Array($);P.forEach((S,T)=>{G[T]=S});for(let[S,T]of Object.entries(q))k[Number(S)]=T;a.push($),i.push({label:u,pipeline:f,buffers:U,groups:A})},c=0,w=r*e.context_len,p=w+r*e.option_slots*e.option_len,g=r*e.context_len,h=r*e.option_slots,y=h*e.option_len,b=this.pipeline(`embed${n}`,()=>V(n));u="embed",l(b,[e.width,e.context_len,c,this.off("embedding"),this.off("pos_context"),this.off("layer0.norm1.w"),this.off("layer0.norm1.b")],{7:e.eps},[t.weights,t.ids,t.xc,t.yc],[g,1,1]),l(b,[e.width,e.option_len,w,this.off("embedding"),this.off("pos_option"),this.off("option_layer.norm1.w"),this.off("option_layer.norm1.b")],{7:e.eps},[t.weights,t.ids,t.xo,t.yo],[y,1,1]);let d=(f,P,q,U,A,$,G=0,k=null,S=!1,T=this.tuning.splitTarget)=>{let{S:R,RM:D}=ie(f,P,q,T),L=this.packed.get($),Q={RM:D,KS:P/R,aSplits:G,aRelu:S,...L?{w8:L.kind}:{}},X=this.pipeline(`mm${n}${JSON.stringify(Q)}`,()=>H(n,Q));return L?l(X,[f,q,P,L.offsetWords,k?this.off(k):0],{5:L.zeroPoint,6:L.scale},[t.weights8,U,A,...G?[t.weights]:[]],[Math.ceil(q/256),Math.ceil(f/D),R]):l(X,[f,q,P,this.off($),k?this.off(k):0],{},[t.weights,U,A],[Math.ceil(q/256),Math.ceil(f/D),R]),R},v=(f,P,q,U,A,$,G)=>{let k=this.pipeline(`rn${n}${q}`,()=>J(n,q));l(k,[f,e.width,this.off(U),this.off(`${G}.w`),this.off(`${G}.b`)],{5:e.eps},[t.weights,P,A,$],[f,1,1])},B=e.width/e.heads,M=Math.ceil(Math.max(e.context_len,e.option_len)/8)*8;if(M*B*2*4>13e3)throw new Error("sequence too long for the attention kernel");let z=(f,P,q,U,A,$,G)=>{let k=A*$;u=`${f}.qkv`;let S=d(k,e.width,3*e.width,U,t.p1,`${f}.qkv.w`,0,null,!1,this.tuning.qkvSplitTarget);u=`${f}.attention`,l(this.pipeline(`att${n}${S}`,()=>Z(n,B,S,M)),[$,G,e.width,0,k,this.off(`${f}.qkv.b`)],{3:1/Math.sqrt(B)},[t.weights,t.p1,t.ids,t.att],[e.heads,A,Math.ceil($/8)]),u=`${f}.out`;let T=d(k,e.width,e.width,t.att,t.p2,`${f}.out.w`);v(k,t.p2,T,`${f}.out.b`,q,U,`${f}.norm2`),u=`${f}.ff1`;let R=d(k,e.width,e.ff,U,t.p1,`${f}.ff1.w`);u=`${f}.ff2`;let D=d(k,e.ff,e.width,t.p1,t.p2,`${f}.ff2.w`,R,`${f}.ff1.b`,!0);v(k,t.p2,D,`${f}.ff2.b`,q,U,P)};for(let f=0;f<e.layers;f+=1)z(`layer${f}`,f+1<e.layers?`layer${f+1}.norm1`:"head.context_norm",t.xc,t.yc,r,e.context_len,c);z("option_layer","option_layer.norm1",t.xo,t.yo,h,e.option_len,w),u="pool",l(this.pipeline(`pool${n}`,()=>ee(n)),[e.option_len,e.width,w,this.off("head.option_norm.w"),this.off("head.option_norm.b")],{5:e.eps},[t.weights,t.xo,t.ids,t.pooled],[h,1,1]),u="head.qkv";let C=d(h,e.width,e.rank,t.pooled,t.pq,"head.q.w"),E=d(g,e.width,e.rank,t.yc,t.p1,"head.k.w"),x=d(g,e.width,e.rank,t.yc,t.p2,"head.v.w");u="head",l(this.pipeline(`head${C}${E}${x}`,()=>re(C,E,x)),[e.context_len,e.option_slots,e.rank,c,p,0,h,g],{5:1/Math.sqrt(e.rank)},[t.pq,t.p1,t.p2,t.ids,t.logits],[e.option_slots,r,1]);let m=this.device.createBuffer({size:a.length*I,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),_=new Uint8Array(a.length*I);a.forEach((f,P)=>_.set(new Uint8Array(f),P*I)),this.device.queue.writeBuffer(m,0,_);let W=i.map((f,P)=>({label:f.label,pipeline:f.pipeline,groups:f.groups,bindGroup:this.device.createBindGroup({layout:f.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:m,offset:P*I,size:32}},...f.buffers.map((q,U)=>({binding:U+1,resource:{buffer:q}}))]})})),O={batch:r,dispatches:W,params:m};return this.programs.set(r,O),O}wake(r=1){let s=this.busy.then(async()=>{let e=this.program(r),t=this.device.createCommandEncoder(),n=t.beginComputePass();for(let a of e.dispatches)n.setPipeline(a.pipeline),n.setBindGroup(0,a.bindGroup),n.dispatchWorkgroups(...a.groups);n.end(),this.device.queue.submit([t.finish()]),await this.device.queue.onSubmittedWorkDone()});return this.busy=s.catch(()=>{}),s}dispatchCount(r=1){return this.program(r).dispatches.length}score(r,s,e,t=1){let n=this.busy.then(()=>this.run(r,s,e,t));return this.busy=n.catch(()=>{}),n}async run(r,s,e,t){let n=this.config,a=this.program(t),i=t*n.context_len,u=t*n.option_slots*n.option_len,l=t*n.option_slots;if(r.length!==i||s.length!==u||e.length!==l)throw new Error(`input sizes ${r.length}/${s.length}/${e.length}, expected ${i}/${u}/${l}`);let c=new Int32Array(i+u+l);c.set(r,0),c.set(s,i),c.set(e,i+u);let{device:w}=this;w.queue.writeBuffer(this.buffers.ids,0,c);let p=w.createCommandEncoder(),g=p.beginComputePass(this.querySet?{timestampWrites:{querySet:this.querySet,beginningOfPassWriteIndex:0,endOfPassWriteIndex:1}}:void 0);for(let d of a.dispatches)g.setPipeline(d.pipeline),g.setBindGroup(0,d.bindGroup),g.dispatchWorkgroups(...d.groups);g.end();let h=l*4,y=Math.ceil(h/256)*256;p.copyBufferToBuffer(this.buffers.logits,0,this.staging,0,h),this.querySet&&this.queryBuffer&&(p.resolveQuerySet(this.querySet,0,2,this.queryBuffer,0),p.copyBufferToBuffer(this.queryBuffer,0,this.staging,y,16)),w.queue.submit([p.finish()]),await this.staging.mapAsync(GPUMapMode.READ);let b=new Float32Array(this.staging.getMappedRange(0,h).slice(0));if(this.querySet){let d=new BigUint64Array(this.staging.getMappedRange(y,16));this.lastGpuMs=Number(d[1]-d[0])/1e6}return this.staging.unmap(),b}async profile(r,s,e,t=1){if(!this.querySet)throw new Error("profile() needs gpuTiming and an adapter with timestamp-query");await this.score(r,s,e,t);let{device:n}=this,a=this.program(t),i=a.dispatches.length,u=n.createQuerySet({type:"timestamp",count:2*i}),l=n.createBuffer({size:16*i,usage:GPUBufferUsage.QUERY_RESOLVE|GPUBufferUsage.COPY_SRC}),c=n.createBuffer({size:16*i,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST}),w=n.createCommandEncoder();a.dispatches.forEach((h,y)=>{let b=w.beginComputePass({timestampWrites:{querySet:u,beginningOfPassWriteIndex:2*y,endOfPassWriteIndex:2*y+1}});b.setPipeline(h.pipeline),b.setBindGroup(0,h.bindGroup),b.dispatchWorkgroups(...h.groups),b.end()}),w.resolveQuerySet(u,0,2*i,l,0),w.copyBufferToBuffer(l,0,c,0,16*i),n.queue.submit([w.finish()]),await c.mapAsync(GPUMapMode.READ);let p=new BigUint64Array(c.getMappedRange()),g={};return a.dispatches.forEach((h,y)=>{let b=h.label.replace(/^layer\d+\./,"layer.");g[b]=(g[b]??0)+Number(p[2*y+1]-p[2*y])/1e6}),c.unmap(),u.destroy(),l.destroy(),c.destroy(),g}destroy(){for(let r of Object.values(this.buffers))r.destroy();for(let r of this.programs.values())r.params.destroy();this.staging.destroy(),this.querySet?.destroy(),this.queryBuffer?.destroy(),this.device.destroy()}};export{oe as Engine,N as readInitializers};
