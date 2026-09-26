@@ -15,7 +15,7 @@ show one in use.
 | ONNX Runtime Web path (wasm, webgpu) | measured, see table |
 | WebNN (the browser's route to the NPU) | **measured in Chrome Canary**: 9.7 ms median, the fastest of the five providers — but behind a flag, so demos must treat it as opportunistic. See `docs/webnn-status-2026-09-21.md` |
 | Custom WGSL runtime | planned, not started |
-| Game demo (`demo/c4/`) | **playable** — WebGPU, 3.9 ms per decision, self-testing encoder (see `demo/c4/README.md`) |
+| Game demo (`demo/c4/`) | **playable, and it plays well** — v2 (7.4 M params, int8, 7.8 MB) scores 0.91 vs a depth-4 bot and beats v1 200–0 in the arena; self-testing encoders (see `demo/c4/README.md`) |
 
 ## What we measured (headless Chromium, M4; Swedish form specialist, 706 k params, 2.82 MB ONNX, 40 option slots x 96 bytes)
 
