@@ -53,6 +53,12 @@ server. Models: <a href="https://huggingface.co/precisit/onepass-c4">precisit/on
       <div class="tiny" id="meta"></div>
       <div class="row">
         <label class="tiny">opponent <select id="opponent"></select></label>
+        <label class="tiny">engine <select id="engine">
+          <option value="auto">auto</option>
+          <option value="wasm">wasm</option>
+          <option value="webgpu">webgpu</option>
+          <option value="webnn">webnn</option>
+        </select></label>
         <label class="tiny">you play <select id="human-side">
           <option value="X">first (X)</option>
           <option value="O">second (O)</option>
@@ -98,7 +104,9 @@ const CATALOGUE = {
   // 2026-09-26, 1.30.0), so the human game runs it on wasm (~20 ms a move). The runtime check in
   // engineFor would reject webgpu anyway; listing wasm only saves loading a session to find out.
   "onepass-c4 v2": { url: params.get("v2") || `${HF}/main/onepass-c4-v2-int8.onnx`, encoder: "v2",
-                     ctxBytes: 44, optionBytes: 8, maxOptions: 7, humanProviders: ["wasm"] },
+                     ctxBytes: 44, optionBytes: 8, maxOptions: 7, humanProviders: ["wasm"],
+                     // WebGPU gets the fp32 file (29.7 MB): correct there, unlike the int8 one
+                     urlFor: { webgpu: params.get("v2") ? null : `${HF}/main/onepass-c4-v2.onnx` } },
   "onepass-c4 v1 (previous)": { url: `${HF}/main/onepass-c4-8x24.onnx`, encoder: "v1",
                                 ctxBytes: 224, optionBytes: 24, maxOptions: 8 },
 };
@@ -307,30 +315,35 @@ let ort;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const engines = new Map();
 
-async function engineFor(name, providers = ["wasm"]) {
+async function engineFor(name, providers = ["wasm"], { force = false } = {}) {
   // The human's opponent asks for webgpu first; arena engines use wasm, because two WebGPU sessions
   // in a tight loop of inferences crashed the renderer in testing. The arena measures play, not speed.
   if (name === "random") return null;
-  const cacheKey = `${name}|${providers.join(",")}`;
+  const cacheKey = `${name}|${providers.join(",")}|${force}`;
   if (engines.has(cacheKey)) return engines.get(cacheKey);
   const spec = CATALOGUE[name];
   if (!spec) throw new Error(`unknown player ${name}`);
   let engine = null;
   for (const ep of providers) {
     let session;
+    const url = (spec.urlFor && spec.urlFor[ep]) || spec.url;
     try {
-      session = await ort.InferenceSession.create(spec.url, { executionProviders: [ep] });
+      session = await ort.InferenceSession.create(url, { executionProviders: [ep] });
     } catch (error) { log(`${name}: ${ep} unavailable: ${error.message || error}`); continue; }
-    const candidate = { name, spec, session, provider: ep, lastMs: 0 };
+    const candidate = { name, spec, session, provider: ep, lastMs: 0, url, file: url.split("/").pop(), warning: "" };
     if (ep !== "wasm") {
       // Runtime check: an accelerator must give the same answers as wasm on the self-test
       // positions before it is trusted. Found the hard way: the int8 v2 model returns all-zero
       // scores on onnxruntime-web's WebGPU backend, which silently turned the model into
       // "always play the first column" in the human game while every wasm-based check passed.
       const verdict = await agreesWithWasm(candidate);
-      if (!verdict.ok) {
+      if (!verdict.ok && !force) {
         log(`${name}: ${ep} disagrees with wasm on the self-test positions (${verdict.why}) — not used`);
         continue;
+      }
+      if (!verdict.ok) {
+        candidate.warning = `⚠ ${ep} disagrees with wasm here (${verdict.why}) — its moves are not the model's`;
+        log(`${name}: ${candidate.warning}`);
       }
     }
     engine = candidate;
@@ -360,8 +373,17 @@ async function probeScores(engine) {
   return out;
 }
 
+const wasmReferences = new Map();
+
 async function agreesWithWasm(candidate) {
-  const reference = await engineFor(candidate.name, ["wasm"]);
+  // the reference is the *same file* on wasm (a different file, e.g. int8 vs fp32, would differ
+  // by quantisation, not by a runtime bug)
+  const url = candidate.url;
+  if (!wasmReferences.has(url)) {
+    const session = await ort.InferenceSession.create(url, { executionProviders: ["wasm"] });
+    wasmReferences.set(url, { ...candidate, session, provider: "wasm" });
+  }
+  const reference = wasmReferences.get(url);
   const [want, got] = [await probeScores(reference), await probeScores(candidate)];
   if (!want.length) return { ok: false, why: "no probe positions" };
   let maxDelta = 0, sameChoice = true;
@@ -398,9 +420,20 @@ const opponentName = () => document.getElementById("opponent").value;
 const modelSide = () => (humanSide === "X" ? "O" : "X");
 
 const humanProviders = (name) => CATALOGUE[name].humanProviders || ["webgpu", "wasm"];
+const engineChoice = () => document.getElementById("engine").value;
 
 async function humanEngine() {
-  return opponentName() === "random" ? null : engineFor(opponentName(), humanProviders(opponentName()));
+  if (opponentName() === "random") return null;
+  const choice = engineChoice();
+  if (choice === "auto") return engineFor(opponentName(), humanProviders(opponentName()));
+  // an explicit choice is honoured (with the runtime check's verdict shown), falling back to wasm
+  // only if the provider cannot load at all
+  return engineFor(opponentName(), [choice, "wasm"], { force: true });
+}
+
+function engineMeta(engine) {
+  return `${engine.name} · ${engine.provider} (${engine.file}) · ${engine.lastMs.toFixed(1)} ms` +
+    (engine.warning ? ` · ${engine.warning}` : "");
 }
 
 async function advice() {
@@ -410,7 +443,7 @@ async function advice() {
   if (!engine) { renderBars({}); metaEl.textContent = "naive opponent: a uniformly random legal column"; return; }
   const { scores, best } = await evaluate(engine);
   renderBars(scores, best);
-  metaEl.textContent = `${engine.name} · ${engine.provider} · ${engine.lastMs.toFixed(1)} ms · green = what the model would play for you`;
+  metaEl.textContent = `${engineMeta(engine)} · green = what the model would play for you`;
 }
 
 async function humanMove(col) {
@@ -440,7 +473,7 @@ async function opponentMove() {
     const { scores, best } = await evaluate(engine);
     col = best;
     renderBars(scores, best);
-    metaEl.textContent = `${engine.name} · ${engine.provider} · ${engine.lastMs.toFixed(1)} ms · green = the model's own choice`;
+    metaEl.textContent = `${engineMeta(engine)} · green = the model's own choice`;
   }
   const row = drop(col, modelSide());
   paint(row, col, modelSide(), true);
@@ -640,9 +673,10 @@ async function runArena(games, { nameA, nameB, opening, seed = null, paintIt = t
 
 // Headless hooks (tools/run_arena.py): the same code paths the buttons use.
 window.__runArena = (opts) => runArena(opts.games, { ...opts, paintIt: false });
-window.__providerOf = async (name, providers) => (await engineFor(name, providers)).provider;
+window.__providerOf = async (name, providers = null) => (await engineFor(name, providers || humanProviders(name))).provider;
+// providers = null means "what the human game uses for this model" (the auto engine setting)
 window.__chooseFor = async (name, board, providers = ["wasm"]) => {
-  const engine = await engineFor(name, providers);
+  const engine = await engineFor(name, providers || humanProviders(name));
   loadBoardV2(board);
   const { best } = await evaluate(engine);
   reset();
@@ -657,6 +691,7 @@ function fillSelect(element, names) {
 document.getElementById("reset").addEventListener("click", () => newGame());
 document.getElementById("opponent").addEventListener("change", () => newGame());
 document.getElementById("human-side").addEventListener("change", () => newGame());
+document.getElementById("engine").addEventListener("change", () => newGame());
 document.getElementById("play").addEventListener("click", () => runArena(20));
 document.getElementById("stop").addEventListener("click", () => { arenaRunning = false; });
 
@@ -669,6 +704,7 @@ reset();
   fillSelect(document.getElementById("side-a"), [...names, "random"]);
   fillSelect(document.getElementById("side-b"), [...names, "random"]);
   document.getElementById("opponent").value = DEFAULT_MODEL;
+  if (["wasm", "webgpu", "webnn"].includes(params.get("engine"))) document.getElementById("engine").value = params.get("engine");
   document.getElementById("side-a").value = DEFAULT_MODEL;
   document.getElementById("side-b").value = "onepass-c4 v1 (previous)";
   PROBES.v1 = (await (await fetch("./selftest-rows.json")).json()).map((row) => ({

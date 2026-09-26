@@ -53,3 +53,8 @@ reference positions must match the wasm backend's; otherwise the page falls back
 in the log. This exists because the first v2 release looked like it "always played column 1": the int8
 model returns all-zero scores on onnxruntime-web's WebGPU backend, and the human game used WebGPU while
 every check had run on wasm. v2 now runs on wasm (~20 ms a move).
+
+The **engine** selector overrides this for the human game: `wasm`, `webgpu` (loads the fp32 v2 file,
+29.7 MB, which is correct on WebGPU), or `webnn` (the browser's own route to CoreML / the NPU, where
+available). An explicit choice is honoured even if the runtime check disagrees — the page then shows a
+warning next to the move time instead of silently switching. `?engine=webgpu` in the URL sets it too.
