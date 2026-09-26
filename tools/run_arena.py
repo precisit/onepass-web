@@ -6,8 +6,8 @@ The public page and the published numbers must not be able to disagree. This scr
   1. checks both encoders' self-tests passed on load;
   2. optionally compares the page's choices with reference choices computed in Python
      (`--parity rows.json`: [{"board": [42 ints], "choice": col}, ...]) - through the *same provider
-     path the human game uses* (webgpu first, then wasm), and through wasm; a check that only ever
-     runs on wasm once missed that the int8 model returned all-zero scores on webgpu;
+     path the human game uses* (the page's "auto" engine), through wasm and through webgpu; a check
+     that only ever ran on wasm once missed that the int8 model returned all-zero scores on webgpu;
   3. runs arena matches (`--match "A|B"`, repeatable) with a pinned seed and prints the tallies.
 
 Usage (serve the repo root first, e.g. `python3 -m http.server 8767`):
@@ -42,12 +42,12 @@ def main() -> None:
         page.wait_for_function("window.__ready === true", timeout=300_000)
         report["self_test_ok"] = page.evaluate("window.__selfTestOk")
         report["human_engine_provider"] = page.evaluate(
-            "() => window.__providerOf('onepass-c4 v2', ['webgpu', 'wasm'])")
+            "() => window.__providerOf('onepass-c4 v2')")
         report["log"] = page.evaluate("document.getElementById('log').textContent")
         if args.parity:
             rows = json.load(open(args.parity))
             report["parity"] = {}
-            for label, providers in (("human-path", ["webgpu", "wasm"]), ("wasm", ["wasm"])):
+            for label, providers in (("human-path", None), ("wasm", ["wasm"]), ("webgpu", ["webgpu"])):
                 agree = 0
                 for row in rows:
                     got = page.evaluate("([b, p]) => window.__chooseFor('onepass-c4 v2', b, p)", [row["board"], providers])
