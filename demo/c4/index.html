@@ -28,12 +28,18 @@
   .panel h2 { font-size: .98rem; margin: 0 0 .15rem; }
   .panel .what { color: var(--muted); font-size: .82rem; margin: 0 0 .65rem; }
   /* status bar: always directly above the board */
-  .statusbar { display: flex; align-items: center; gap: .6rem; min-height: 3rem; padding: .55rem .9rem;
+  /* A fixed height, so the board below never jumps as the message changes: the title is one line,
+     the sub-line always reserves its space (even when empty) and is clamped to two lines. */
+  .statusbar { display: flex; align-items: center; gap: .6rem; height: 4.6rem; padding: .5rem .9rem;
                border-radius: .75rem; background: var(--panel); box-shadow: 0 1px 3px rgba(16,32,56,.10);
-               font-weight: 600; }
-  .statusbar .text { flex: 1; }
-  .statusbar .sub { display: block; font-weight: 400; color: var(--muted); font-size: .82rem; }
-  .statusbar.result { font-size: 1.15rem; }
+               font-weight: 600; overflow: hidden; }
+  .statusbar .text { flex: 1; min-width: 0; }
+  .statusbar #status { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .statusbar .sub { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+                    min-height: 1.2em; line-height: 1.25; font-weight: 400; color: var(--muted); font-size: .82rem; }
+  .statusbar.result #status { font-size: 1.1rem; }
+  .statusbar #again { flex: none; }
+  @media (max-width: 520px) { .statusbar { height: 5.4rem; } .statusbar #again { padding: .4rem .7rem; } }
   .statusbar.result.win { background: #e7f7ec; box-shadow: inset 0 0 0 2px var(--good); }
   .statusbar.result.lose { background: #fdeceb; box-shadow: inset 0 0 0 2px var(--red); }
   .statusbar.result.draw { background: #eef2f7; box-shadow: inset 0 0 0 2px #9aa7b8; }
@@ -206,6 +212,7 @@ if (params.get("b")) {
 }
 const DEFAULT_MODEL = "onepass-c4 v2";
 const labelOf = (name) => (name === "random" ? "Random player" : CATALOGUE[name].label);
+const shortLabel = (name) => labelOf(name).replace(/\s*\(.*\)$/, ""); // "AI v2 (current)" -> "AI v2"
 const W = 7, H = 6, R = 38, PAD = 18, GAP = 8;
 const CELL = 2 * R + GAP;
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -595,7 +602,9 @@ function preferences(scores) {
 
 function renderView(scores = null, best = null, kind = "played") {
   barsEl.innerHTML = "";
-  barsEl.hidden = !scores; // no empty chart: the caption explains what will appear
+  // no empty chart: the caption explains what will appear. (`.hidden` is an HTMLElement property and
+  // silently does nothing on an <svg>, so the attribute is toggled directly.)
+  barsEl.toggleAttribute("hidden", !scores);
   const pref = scores ? preferences(scores) : {};
   for (let c = 0; c < W; c += 1) {
     const x = cellX(c) - R;
@@ -739,7 +748,7 @@ function finish() {
       : "Try letting the AI start — it is stronger then.";
     setStatus("You win! 🎉", `${four} ${tip}`, colorOf(win.who), "win");
   }
-  else setStatus(`${labelOf(opponentName())} wins`, `${four} Press "Play again" for a rematch.`, colorOf(win.who), "lose");
+  else setStatus(`${shortLabel(opponentName())} wins`, `${four} Press "Play again" for a rematch.`, colorOf(win.who), "lose");
   return true;
 }
 
@@ -873,12 +882,13 @@ async function runArena(games, { nameA, nameB, opening, seed = null, paintIt = t
   const [lo, hi] = wilson(tally.A + tally.draw / 2, played);
   $("score-ci").textContent =
     `${lines.size} different games. A's score ${score.toFixed(2)} (a win counts 1, a draw ½); 95 % interval ${lo.toFixed(2)}–${hi.toFixed(2)}.`;
-  const lead = tally.A === tally.B ? "Level" : `${labelOf(tally.A > tally.B ? nameA : nameB)} wins the arena`;
-  setStatus(`${lead}: ${tally.A} – ${tally.B}`,
+  // short enough for one line on a phone, next to the button
+  const lead = tally.A === tally.B ? "Level" : `${shortLabel(tally.A > tally.B ? nameA : nameB)} wins`;
+  setStatus(`${lead} ${Math.max(tally.A, tally.B)}–${Math.min(tally.A, tally.B)}`,
     `${labelOf(nameA)} ${tally.A} · ${labelOf(nameB)} ${tally.B} · draws ${tally.draw} · the board shows the last game`,
     "none", "arena");
-  $("again").textContent = "Play a game yourself";
-  setCaption("The arena is over. Press “Play a game yourself” above to play against the AI.");
+  $("again").textContent = "Play yourself";
+  setCaption("The arena is over. Press “Play yourself” above to play against the AI.");
   setArenaLock(false);
   $("play").hidden = false;
   $("stop").hidden = true;
