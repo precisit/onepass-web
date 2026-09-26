@@ -14,8 +14,9 @@ show one in use.
 | Bench instrument (`runtime/bench.html`) | working, used for the numbers below |
 | ONNX Runtime Web path (wasm, webgpu) | measured, see table |
 | WebNN (the browser's route to the NPU) | **measured in Chrome Canary**: 9.7 ms median, the fastest of the five providers, but behind a flag, so demos must treat it as opportunistic. See `docs/webnn-status-2026-09-21.md` |
-| Custom WGSL runtime | planned, not started |
+| Custom WGSL runtime | **working** for the Connect Four model: [precisit/onepass-webgpu](https://github.com/precisit/onepass-webgpu), 22 KB (7 KB gzip), same choices as ONNX Runtime on all 17 325 eval positions, about 4 ms per move vs 20 ms on wasm (M1 Max, Chrome; provisional numbers from a busy machine) |
 | Game demo (`demo/c4/`) | **playable, and it plays well**: v2 (7.4 M params, int8, 7.8 MB) scores 0.91 vs a depth-4 bot and beats v1 200-0 in the arena; self-testing encoders (see `demo/c4/README.md`) |
+| Speed demo (`demo/c4-speed/`) | **live**: the Connect Four model on onnxruntime-web (wasm) and onepass-webgpu side by side, with a runtime check and a 200-position race (see `demo/c4-speed/README.md`) |
 
 ## What we measured (headless Chromium, M4; Swedish form specialist, 706 k params, 2.82 MB ONNX, 40 option slots x 96 bytes)
 
