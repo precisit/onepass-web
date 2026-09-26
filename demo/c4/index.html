@@ -94,8 +94,11 @@ server. Models: <a href="https://huggingface.co/precisit/onepass-c4">precisit/on
 const HF = "https://huggingface.co/precisit/onepass-c4/resolve";
 const params = new URLSearchParams(location.search);
 const CATALOGUE = {
+  // int8 weights: onnxruntime-web's WebGPU backend returns all-zero scores for this file (measured
+  // 2026-09-26, 1.30.0), so the human game runs it on wasm (~20 ms a move). The runtime check in
+  // engineFor would reject webgpu anyway; listing wasm only saves loading a session to find out.
   "onepass-c4 v2": { url: params.get("v2") || `${HF}/main/onepass-c4-v2-int8.onnx`, encoder: "v2",
-                     ctxBytes: 44, optionBytes: 8, maxOptions: 7 },
+                     ctxBytes: 44, optionBytes: 8, maxOptions: 7, humanProviders: ["wasm"] },
   "onepass-c4 v1 (previous)": { url: `${HF}/main/onepass-c4-8x24.onnx`, encoder: "v1",
                                 ctxBytes: 224, optionBytes: 24, maxOptions: 8 },
 };
@@ -305,26 +308,71 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const engines = new Map();
 
 async function engineFor(name, providers = ["wasm"]) {
-  // The human's opponent runs on webgpu when it can; arena engines use wasm, because two WebGPU
-  // sessions in a tight loop of inferences crashed the renderer in testing. The arena measures
-  // play, not speed.
+  // The human's opponent asks for webgpu first; arena engines use wasm, because two WebGPU sessions
+  // in a tight loop of inferences crashed the renderer in testing. The arena measures play, not speed.
   if (name === "random") return null;
   const cacheKey = `${name}|${providers.join(",")}`;
   if (engines.has(cacheKey)) return engines.get(cacheKey);
   const spec = CATALOGUE[name];
   if (!spec) throw new Error(`unknown player ${name}`);
-  let session = null, provider = "?";
+  let engine = null;
   for (const ep of providers) {
+    let session;
     try {
       session = await ort.InferenceSession.create(spec.url, { executionProviders: [ep] });
-      provider = ep;
-      break;
-    } catch (error) { log(`${name}: ${ep} unavailable: ${error.message || error}`); }
+    } catch (error) { log(`${name}: ${ep} unavailable: ${error.message || error}`); continue; }
+    const candidate = { name, spec, session, provider: ep, lastMs: 0 };
+    if (ep !== "wasm") {
+      // Runtime check: an accelerator must give the same answers as wasm on the self-test
+      // positions before it is trusted. Found the hard way: the int8 v2 model returns all-zero
+      // scores on onnxruntime-web's WebGPU backend, which silently turned the model into
+      // "always play the first column" in the human game while every wasm-based check passed.
+      const verdict = await agreesWithWasm(candidate);
+      if (!verdict.ok) {
+        log(`${name}: ${ep} disagrees with wasm on the self-test positions (${verdict.why}) — not used`);
+        continue;
+      }
+    }
+    engine = candidate;
+    break;
   }
-  if (!session) throw new Error(`could not load ${name}`);
-  const engine = { name, spec, session, provider, lastMs: 0 };
+  if (!engine) throw new Error(`could not load ${name}`);
   engines.set(cacheKey, engine);
   return engine;
+}
+
+// Probe positions for the runtime check: the same reference rows the encoder self-test uses.
+const PROBES = { v1: [], v2: [] };
+
+function snapshot() { return { grid: grid.map((r) => r.slice()), moves: moves.slice(), toMove, over }; }
+function restore(s) { grid = s.grid; moves = s.moves; toMove = s.toMove; over = s.over; }
+
+async function probeScores(engine) {
+  const saved = snapshot();
+  const out = [];
+  for (const row of PROBES[engine.spec.encoder]) {
+    if (engine.spec.encoder === "v2") loadBoardV2(row.board);
+    else replayMoves(row.drag);
+    const { cols, scores } = await evaluate(engine);
+    out.push(cols.map((c) => scores[c]));
+  }
+  restore(saved);
+  return out;
+}
+
+async function agreesWithWasm(candidate) {
+  const reference = await engineFor(candidate.name, ["wasm"]);
+  const [want, got] = [await probeScores(reference), await probeScores(candidate)];
+  if (!want.length) return { ok: false, why: "no probe positions" };
+  let maxDelta = 0, sameChoice = true;
+  want.forEach((w, i) => {
+    const g = got[i];
+    w.forEach((v, j) => { maxDelta = Math.max(maxDelta, Math.abs(v - g[j])); });
+    const arg = (a) => a.indexOf(Math.max(...a));
+    if (arg(w) !== arg(g)) sameChoice = false;
+  });
+  const ok = sameChoice && maxDelta < 0.05;
+  return { ok, why: `max |Δscore| ${maxDelta.toFixed(3)}, same choices: ${sameChoice}` };
 }
 
 async function evaluate(engine) {
@@ -349,8 +397,10 @@ async function evaluate(engine) {
 const opponentName = () => document.getElementById("opponent").value;
 const modelSide = () => (humanSide === "X" ? "O" : "X");
 
+const humanProviders = (name) => CATALOGUE[name].humanProviders || ["webgpu", "wasm"];
+
 async function humanEngine() {
-  return opponentName() === "random" ? null : engineFor(opponentName(), ["webgpu", "wasm"]);
+  return opponentName() === "random" ? null : engineFor(opponentName(), humanProviders(opponentName()));
 }
 
 async function advice() {
@@ -590,9 +640,10 @@ async function runArena(games, { nameA, nameB, opening, seed = null, paintIt = t
 
 // Headless hooks (tools/run_arena.py): the same code paths the buttons use.
 window.__runArena = (opts) => runArena(opts.games, { ...opts, paintIt: false });
-window.__chooseFor = async (name, board) => {
+window.__providerOf = async (name, providers) => (await engineFor(name, providers)).provider;
+window.__chooseFor = async (name, board, providers = ["wasm"]) => {
+  const engine = await engineFor(name, providers);
   loadBoardV2(board);
-  const engine = await engineFor(name);
   const { best } = await evaluate(engine);
   reset();
   return best;
@@ -620,8 +671,12 @@ reset();
   document.getElementById("opponent").value = DEFAULT_MODEL;
   document.getElementById("side-a").value = DEFAULT_MODEL;
   document.getElementById("side-b").value = "onepass-c4 v1 (previous)";
+  PROBES.v1 = (await (await fetch("./selftest-rows.json")).json()).map((row) => ({
+    drag: row.context.split("\n")[1].replace("DRAG", "").trim().split(/\s+/).filter(Boolean).map((t) => Number(t) - 1),
+  }));
+  PROBES.v2 = (await (await fetch("./selftest-v2.json")).json()).map((row) => ({ board: row.board }));
   const started = performance.now();
-  const engine = await engineFor(DEFAULT_MODEL, ["webgpu", "wasm"]);
+  const engine = await engineFor(DEFAULT_MODEL, humanProviders(DEFAULT_MODEL));
   log(`${engine.name} loaded in ${(performance.now() - started).toFixed(0)} ms on ${engine.provider}`);
   window.__selfTestOk = await selfTest();
   await newGame();
