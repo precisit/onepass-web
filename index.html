@@ -30,10 +30,10 @@ forward pass, with no tokenizer, no generation and no server.</p>
 
 <div class="card">
   <h2><a href="demo/c4/">Play Connect Four against a specialist</a></h2>
-  <p>A 706 k-parameter model that scores the legal columns in one forward pass —
-  <span class="num">3.9 ms</span> per move on webgpu. It plays, it loses, and the column scores under
-  the board show exactly why. The same page runs an arena, so a model can play another model or a
-  naive random opponent, as fast as the browser allows.</p>
+  <p>A 7.4 M-parameter model that scores the legal columns in one forward pass — no search, no
+  rules. Trained on positions labelled by an exact solver, it scores 0.91 against a depth-4 search bot
+  and 0.88 against a depth-6 one (its 706 k predecessor: 0.03). The same page runs an arena, so the new
+  model can play the old one, or a random player, as fast as the browser allows.</p>
 </div>
 
 <h2>Measured so far</h2>
