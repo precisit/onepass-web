@@ -10,6 +10,11 @@ The Connect Four model from [`demo/c4`](../c4/) (v2, 7.4 M parameters), run two 
 Play a game: the WebGPU runtime picks the AI's moves, and every move is also scored and timed on
 WebAssembly. "Run the race" times each engine on the same 200 positions. The main demo is unchanged.
 
+While you think, the GPU and CPU slow down to save power, and the first decision after a pause would pay
+10 to 100 ms to wake them. So when you click, each engine gets one untimed warm-up run while your disc drops,
+and the timed decision comes right after. Without it, single moves in a game looked several times slower
+than in the race.
+
 ## Checks
 
 - **Encoder self-test:** the page re-encodes reference positions and compares the bytes with the Python tooling.
