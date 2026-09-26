@@ -47,3 +47,9 @@ how many distinct games were actually played.
 On every load the page re-encodes reference positions with its own JavaScript and compares the bytes
 with hashes produced by the Python tooling — once for each model's encoder. A wrong encoder looks
 exactly like a weak model, which is why it is checked on every load rather than trusted once.
+
+The runtime is checked too: before an accelerator (WebGPU) is used for a model, its scores on the same
+reference positions must match the wasm backend's; otherwise the page falls back to wasm and says so
+in the log. This exists because the first v2 release looked like it "always played column 1": the int8
+model returns all-zero scores on onnxruntime-web's WebGPU backend, and the human game used WebGPU while
+every check had run on wasm. v2 now runs on wasm (~20 ms a move).
