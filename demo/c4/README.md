@@ -1,6 +1,6 @@
-# demo/c4 — play Connect Four against a one-pass model
+# demo/c4: play Connect Four against a one-pass model
 
-Open `index.html` (or the published page) and click a column. Red always moves first — choose whether
+Open `index.html` (or the published page) and click a column. Red always moves first. Choose whether
 that is you or the AI, and pick your opponent: the current model (v2), the previous one (v1), or a random
 player. The bar above the board says whose turn it is and, at the end, who won (the winning four is
 outlined). "How the AI sees the board" shows, after each AI move, how much it preferred every column
@@ -9,7 +9,7 @@ outlined). "How the AI sees the board" shows, after each AI move, how much it pr
 Every model decision is **one forward pass**: the board goes in as 44 bytes (`1:` or `2:` for who
 opened, then 42 cells from the mover's point of view), the legal columns go in as short strings
 (`column 4`), and the model returns one score per column. The page plays the highest score. There is
-no search, no hand-written rule and no server — the scores under the board are the whole decision.
+no search, no hand-written rule and no server. The scores under the board are the whole decision.
 
 ## The models
 
@@ -30,7 +30,7 @@ time, colours alternate, starting from an empty board):
 | a depth-4 search bot | 0.91 | 0.03 |
 | a depth-6 search bot | 0.88 | 0.02 |
 | a random player | 1.00 | 0.89 |
-| a perfect player | 0.48 | — |
+| a perfect player | 0.48 | - |
 | each other | 0.985 | 0.015 |
 
 For scale: a *perfect* player scores 0.89 against the depth-4 bot under the same protocol (its own
@@ -41,14 +41,14 @@ against a perfect player (both sides with the same 5 % random moves) it is close
 ## The arena
 
 Pick any two players and run 20 games. They swap who opens every game, and each game starts with a
-couple of random moves (the "random opening" setting) — otherwise two deterministic models would play
-the same two games over and over, and "20–0" would mean nothing. The tally shows a 95 % interval and
+couple of random moves (the "random opening" setting). Otherwise two deterministic models would play
+the same two games over and over, and "20-0" would mean nothing. The tally shows a 95 % interval and
 how many distinct games were actually played.
 
 ## Self-test
 
 On every load the page re-encodes reference positions with its own JavaScript and compares the bytes
-with hashes produced by the Python tooling — once for each model's encoder. A wrong encoder looks
+with hashes produced by the Python tooling, once for each model's encoder. A wrong encoder looks
 exactly like a weak model, which is why it is checked on every load rather than trusted once.
 
 The runtime is checked too: before an accelerator (WebGPU) is used for a model, its scores on the same

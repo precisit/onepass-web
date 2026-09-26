@@ -88,7 +88,7 @@
 <header>
   <h1>Connect Four against a tiny AI in your browser</h1>
   <p class="lede">The AI is a 7.8 MB model that picks each move in a single forward pass: it looks at the
-  board, gives every free column a score and plays the best one. No search, no hand-written rules — and
+  board, gives every free column a score and plays the best one. No search, no hand-written rules, and
   it runs entirely on your device, nothing is sent to a server.
   <a href="https://huggingface.co/precisit/onepass-c4">Model</a> ·
   <a href="https://github.com/precisit/one-pass-specialists/tree/main/examples/c4">How it was trained</a> ·
@@ -114,7 +114,7 @@
   <aside class="side">
     <section class="panel" id="play-panel">
       <h2>Play against the AI</h2>
-      <p class="what">Click a column on the board to drop your disc. Four in a row — across, up or diagonal — wins.</p>
+      <p class="what">Click a column on the board to drop your disc. Four in a row wins: across, up or diagonal.</p>
       <div class="row">
         <label class="field">Opponent <select id="opponent"></select></label>
         <div class="field">Who starts?
@@ -160,7 +160,7 @@
     <details class="panel">
       <summary>Technical checks</summary>
       <p class="fine">On every load the page re-encodes reference positions and compares them with the
-      Python tooling's bytes — a wrong encoder would look exactly like a weak AI.</p>
+      Python tooling's bytes. A wrong encoder would look exactly like a weak AI.</p>
       <pre id="log"></pre>
     </details>
   </aside>
@@ -185,10 +185,10 @@ const CATALOGUE = {
     about: [
       ["Model", "onepass-c4 v2"],
       ["Size", "7.4 million parameters · 7.8 MB download"],
-      ["Runs", "in this tab, with WebAssembly — nothing leaves your device"],
+      ["Runs", "in this tab, with WebAssembly. Nothing leaves your device."],
       ["How it decides", "one forward pass per move: a score for every free column, and it plays the highest"],
       ["Trained on", "42 million positions, every column scored by an exact Connect Four solver"],
-      ["Strength", "beats a depth-4 search bot in 92 % of games — as often as a perfect player does in the same test"],
+      ["Strength", "beats a depth-4 search bot in 92 % of games, as often as a perfect player does in the same test"],
     ],
   },
   "onepass-c4 v1 (previous)": {
@@ -198,7 +198,7 @@ const CATALOGUE = {
     about: [
       ["Model", "onepass-c4 v1"],
       ["Size", "0.7 million parameters · 2.9 MB download"],
-      ["Runs", "in this tab, with WebAssembly — nothing leaves your device"],
+      ["Runs", "in this tab, with WebAssembly. Nothing leaves your device."],
       ["How it decides", "one forward pass per move, like v2"],
       ["Trained on", "about 80 thousand endgame positions only"],
       ["Strength", "beats a depth-4 search bot in 3 % of games"],
@@ -353,11 +353,11 @@ async function engineFor(name, providers = ["wasm"], { force = false } = {}) {
       // "always play the first column" in the human game while every wasm-based check passed.
       const verdict = await agreesWithWasm(candidate);
       if (!verdict.ok && !force) {
-        log(`${name}: ${ep} disagrees with wasm on the self-test positions (${verdict.why}) — not used`);
+        log(`${name}: ${ep} disagrees with wasm on the self-test positions (${verdict.why}), not used`);
         continue;
       }
       if (!verdict.ok) {
-        candidate.warning = `⚠ ${ep} disagrees with wasm here (${verdict.why}) — its moves are not the model's`;
+        candidate.warning = `⚠ ${ep} disagrees with wasm here (${verdict.why}), so its moves are not the model's`;
         log(`${name}: ${candidate.warning}`);
       }
     }
@@ -639,7 +639,7 @@ async function humanEngine() {
   const name = opponentName();
   if (name === "random") return null;
   const key = `${name}|${humanProviders().join(",")}|${!!engineOverride}`;
-  if (!engines.has(key)) setStatus(`Downloading ${labelOf(name)}…`, "one moment — it runs in your browser once loaded", "none");
+  if (!engines.has(key)) setStatus(`Downloading ${labelOf(name)}…`, "One moment. It runs in your browser once loaded.", "none");
   return engineFor(name, humanProviders(), { force: !!engineOverride });
 }
 
@@ -662,7 +662,7 @@ function renderAbout(engine = null) {
   const rows = [...spec.about];
   const t = moveTimes[name];
   rows.splice(3, 0, ["Move time", t ? `${(t.sum / t.n).toFixed(0)} ms per move on this device` : "shown after its first move"]);
-  if (engine && engine.provider !== "wasm") rows.push(["Engine", `${engine.provider} (testing override)${engine.warning ? " — " + engine.warning : ""}`]);
+  if (engine && engine.provider !== "wasm") rows.push(["Engine", `${engine.provider} (testing override)${engine.warning ? ". " + engine.warning : ""}`]);
   $("about").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
 }
 
@@ -674,7 +674,7 @@ function noteTime(engine) {
 
 async function updateView() {
   // what the "How the AI sees the board" panel shows, in every state
-  if (mode === "arena") { renderView(); setCaption("Hidden while the arena plays — the AIs are too fast to follow."); return; }
+  if (mode === "arena") { renderView(); setCaption("Hidden while the arena plays. The AIs are too fast to follow."); return; }
   if (opponentName() === "random") { renderView(); setCaption("The random player doesn't score columns. Pick an AI opponent to see how it rates each move."); return; }
   if (over) return; // keep the last picture at the end of a game
   if (toMove === humanSide) {
@@ -694,7 +694,7 @@ async function updateView() {
 }
 
 function yourTurn() {
-  setStatus(`Your turn — you are ${colorOf(humanSide)}`, "Click a column to drop your disc.", colorOf(humanSide));
+  setStatus(`Your turn, you are ${colorOf(humanSide)}`, "Click a column to drop your disc.", colorOf(humanSide));
   updateView();
 }
 
@@ -745,7 +745,7 @@ function finish() {
   if (!win) setStatus("It's a draw", "The board is full and nobody has four in a row.", "none", "draw");
   else if (win.who === humanSide) {
     const tip = opponentName() === "random" ? "Now try the real thing: pick AI v2 as your opponent."
-      : "Try letting the AI start — it is stronger then.";
+      : "Try letting the AI start, it is stronger then.";
     setStatus("You win! 🎉", `${four} ${tip}`, colorOf(win.who), "win");
   }
   else setStatus(`${shortLabel(opponentName())} wins`, `${four} Press "Play again" for a rematch.`, colorOf(win.who), "lose");
@@ -881,10 +881,10 @@ async function runArena(games, { nameA, nameB, opening, seed = null, paintIt = t
   const score = (tally.A + tally.draw / 2) / Math.max(1, played);
   const [lo, hi] = wilson(tally.A + tally.draw / 2, played);
   $("score-ci").textContent =
-    `${lines.size} different games. A's score ${score.toFixed(2)} (a win counts 1, a draw ½); 95 % interval ${lo.toFixed(2)}–${hi.toFixed(2)}.`;
+    `${lines.size} different games. A's score ${score.toFixed(2)} (a win counts 1, a draw ½); 95 % interval ${lo.toFixed(2)}-${hi.toFixed(2)}.`;
   // short enough for one line on a phone, next to the button
   const lead = tally.A === tally.B ? "Level" : `${shortLabel(tally.A > tally.B ? nameA : nameB)} wins`;
-  setStatus(`${lead} ${Math.max(tally.A, tally.B)}–${Math.min(tally.A, tally.B)}`,
+  setStatus(`${lead} ${Math.max(tally.A, tally.B)}-${Math.min(tally.A, tally.B)}`,
     `${labelOf(nameA)} ${tally.A} · ${labelOf(nameB)} ${tally.B} · draws ${tally.draw} · the board shows the last game`,
     "none", "arena");
   $("again").textContent = "Play yourself";
@@ -933,7 +933,7 @@ reset();
 setArenaLock(true);
 $("stop").hidden = true;
 $("play").disabled = true;
-setStatus("Downloading the AI (7.8 MB)…", "It runs in your browser once loaded — nothing is sent to a server.", "none");
+setStatus("Downloading the AI (7.8 MB)…", "It runs in your browser once loaded. Nothing is sent to a server.", "none");
 (async () => {
   ort = await import(`${ORT_URL}ort.all.mjs`);
   ort.env.wasm.wasmPaths = ORT_URL;
