@@ -105,6 +105,8 @@
         <tbody id="move-times"></tbody>
       </table>
       <p class="fine" id="agree"></p>
+      <p class="fine">Moves in a game come with pauses, and the GPU and CPU slow down while idle, so single
+      moves here are slower and noisier than in the race below.</p>
     </section>
     <section class="panel">
       <h2>Race: 200 positions</h2>
@@ -120,8 +122,9 @@
         <tbody id="loads"></tbody>
       </table>
       <p class="fine">Start-up = creating the engine from the downloaded file, plus its first move. The model
-      download itself depends on your network and is not included. The WebGPU runtime reads its weights
-      straight from the unchanged fp32 ONNX file.</p>
+      download itself depends on your network and is not included. onnxruntime-web starts its WebAssembly
+      once, in the first engine (int8). The WebGPU runtime reads its weights straight from the unchanged fp32
+      ONNX file. Code sizes are as decoded by the browser.</p>
     </section>
     <details class="panel" id="tech">
       <summary>Technical checks</summary>
@@ -437,6 +440,8 @@ function codeSizes() {
 // ---- play -------------------------------------------------------------------------
 async function aiMove() {
   setStatus("The AI is thinking…", "", colorOf(aiSide()));
+  // let the dropping disc land first: its animation renders on the same GPU and would be timed too
+  await sleep(450);
   const last = {};
   let chosen = null;
   const picks = {};
@@ -452,7 +457,6 @@ async function aiMove() {
   $("agree").textContent = agree ? `All engines chose column ${chosen + 1}.`
     : `Engines chose: ${order().map((k) => `${engines[k].label} (${engines[k].detail}) column ${picks[k] + 1}`).join(", ")}. `
       + "int8 weights are a slightly different model, so an occasional different choice is expected there.";
-  await sleep(150);
   const row = drop(chosen, aiSide());
   paint(row, chosen, aiSide());
 }
@@ -588,12 +592,13 @@ setStatus("Loading…", "Downloading the model (29.7 MB fp32 for WebGPU, 7.8 MB 
   const report = { precision: PRECISION };
   const rows = await (await fetch("./selftest-v2.json")).json();
   report.encoder_ok = await encoderSelfTest(rows);
-  ort = await import(`${ORT_URL}ort.all.mjs`);
+  ort = await import(`${ORT_URL}ort.wasm.min.mjs`); // the WebAssembly-only build
   ort.env.wasm.wasmPaths = ORT_URL;
   const [f32, int8] = await Promise.all([fetchBytes(MODEL_F32), params.has("parity") ? null : fetchBytes(MODEL_INT8)]);
   log(`downloaded fp32 ${mb(f32.bytes.length)} in ${f32.fetchMs.toFixed(0)} ms` + (int8 ? `, int8 ${mb(int8.bytes.length)} in ${int8.fetchMs.toFixed(0)} ms` : ""));
-  engines.wasm32 = await makeOrtEngine("wasm32", "onnxruntime-web", "wasm, fp32 (same file as WebGPU)", "wasm32", f32.bytes);
+  // the int8 engine first: it pays onnxruntime-web's one-time WebAssembly start-up, as in the main demo
   if (int8) engines.wasm8 = await makeOrtEngine("wasm8", "onnxruntime-web", "wasm, int8 (the main demo)", "wasm", int8.bytes);
+  engines.wasm32 = await makeOrtEngine("wasm32", "onnxruntime-web", "wasm, fp32 (same file as WebGPU)", "wasm32", f32.bytes);
   let gpuError = null;
   if (!navigator.gpu) gpuError = "this browser has no WebGPU";
   else {
