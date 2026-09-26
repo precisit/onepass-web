@@ -36,6 +36,14 @@ forward pass, with no tokenizer, no generation and no server.</p>
   model can play the old one, or a random player, as fast as the browser allows.</p>
 </div>
 
+<div class="card">
+  <h2><a href="demo/c4-speed/">Connect Four: one model, two runtimes</a></h2>
+  <p>The same Connect Four model on onnxruntime-web (WebAssembly) and on
+  <a href="https://github.com/precisit/onepass-webgpu">onepass-webgpu</a>, a 22 KB WebGPU runtime written for
+  one-pass models. Same choices on all 17 325 test positions, about 4 ms per move against 20 ms on
+  WebAssembly (M1 Max, Chrome). Play a game and watch both engines time every move.</p>
+</div>
+
 <h2>Measured so far</h2>
 <table>
   <tr><th>shape</th><th>provider</th><th>median per decision</th><th>decisions/s</th></tr>
@@ -48,8 +56,8 @@ forward pass, with no tokenizer, no generation and no server.</p>
 <p class="sub">706 k parameters, 2.9 MB ONNX, headless Chromium on an M4, model fetched from Hugging
 Face. The shape is a bigger lever than the provider: shrinking the option block from 40 × 96 to
 8 × 24 cut the work about twenty-fold and made the new wasm path faster than the old webgpu one. The
-runtime is still <code>29 MB</code>, ten times the model, which is why a purpose-built kernel is on
-the roadmap. WebNN (the browser's own NPU route) needs Chrome Canary and a flag; it is measured, not
+runtime is <code>29 MB</code>, ten times the model, which is why we wrote a purpose-built one:
+<a href="demo/c4-speed/">onepass-webgpu</a>, 22 KB. WebNN (the browser's own NPU route) needs Chrome Canary and a flag; it is measured, not
 assumed.</p>
 
 <p class="sub">Code: <a href="https://github.com/precisit/onepass-web">precisit/onepass-web</a> and
