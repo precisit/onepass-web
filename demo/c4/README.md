@@ -1,5 +1,8 @@
 # demo/c4: play Connect Four against a one-pass model
 
+The story behind the model: [Meet your one-pass AI opponent](https://precisit.com/en/blog/onepass-connect-four/)
+(also [in Swedish](https://precisit.com/blog/onepass-connect-four/)).
+
 Open `index.html` (or the published page) and click a column. Red always moves first. Choose whether
 that is you or the AI, and pick your opponent: the current model (v2), the previous one (v1), or a random
 player. The bar above the board says whose turn it is and, at the end, who won (the winning four is
