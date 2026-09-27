@@ -8,7 +8,7 @@
   :root {
     --board: #10457a; --hole: #eef2f7; --red: #e8503a; --yellow: #f7c948;
     --ink: #16202e; --muted: #5f6b7c; --line: #e3e8ef; --bg: #f4f6f9; --accent: #2f6fe0;
-    --good: #16a34a; --panel: #fff; --gpu: #7c3aed; --gpu8: #c084fc; --wasm: #0e7490; --wasm32: #94a3b8;
+    --good: #16a34a; --panel: #fff; --gpu: #7c3aed; --gpu8: #c084fc; --wasm: #0e7490; --wasm32: #94a3b8; --solver: #16a34a;
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
@@ -56,11 +56,11 @@
   th { font-weight: 600; color: var(--muted); font-size: .76rem; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .tag { display: inline-block; width: .7rem; height: .7rem; border-radius: .2rem; margin-right: .4rem; vertical-align: -1px; }
-  .tag.gpu { background: var(--gpu); } .tag.gpu8 { background: var(--gpu8); } .tag.wasm { background: var(--wasm); } .tag.wasm32 { background: var(--wasm32); }
+  .tag.gpu { background: var(--gpu); } .tag.gpu8 { background: var(--gpu8); } .tag.wasm { background: var(--wasm); } .tag.wasm32 { background: var(--wasm32); } .tag.solver { background: var(--solver); }
   .sub2 { display: block; color: var(--muted); font-size: .74rem; }
   .bars { display: grid; grid-template-columns: max-content 1fr max-content; gap: .35rem .6rem; align-items: center; font-size: .84rem; margin-top: .6rem; }
   .bar { height: .9rem; border-radius: .25rem; min-width: 2px; }
-  .bar.gpu { background: var(--gpu); } .bar.gpu8 { background: var(--gpu8); } .bar.wasm { background: var(--wasm); } .bar.wasm32 { background: var(--wasm32); }
+  .bar.gpu { background: var(--gpu); } .bar.gpu8 { background: var(--gpu8); } .bar.wasm { background: var(--wasm); } .bar.wasm32 { background: var(--wasm32); } .bar.solver { background: var(--solver); }
   .big { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
   .fine { font-size: .78rem; color: var(--muted); margin: .7rem 0 0; }
   details.panel summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
@@ -74,7 +74,8 @@
   in your browser: with onnxruntime-web on WebAssembly (what the main demo uses), and with
   <a href="https://github.com/precisit/onepass-webgpu">onepass-webgpu</a>, a 24 KB WebGPU runtime written for
   this kind of model, which can read either the fp32 file or the same 7.8 MB int8 file as the main demo. Play a
-  game: the WebGPU runtime picks the moves, and every move is also timed on the other engines.</p>
+  game: the WebGPU runtime picks the moves, and every move is also timed on the other engines, and on a perfect
+  Connect Four solver for comparison.</p>
 </header>
 <main class="layout">
   <section class="game">
@@ -99,7 +100,8 @@
   <aside class="side">
     <section class="panel">
       <h2>Time per move</h2>
-      <p class="what">Every AI move is scored by all four engines, one after the other, on the same position.
+      <p class="what">Every AI move is scored by every engine, one after the other, on the same position; the
+      perfect solver (a search, not a model) is there for comparison.
       Time is from the board going in to the scores coming back in JavaScript.</p>
       <table>
         <thead><tr><th>engine</th><th class="num">this move</th><th class="num">median</th><th class="num">moves</th></tr></thead>
@@ -143,6 +145,8 @@ import { Engine } from "./onepass-webgpu.js";
 
 const HF = "https://huggingface.co/precisit/onepass-c4/resolve/main";
 const ORT_URL = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
+// the perfect solver, for comparison: connect-four-ai (MIT, Benjamin Rall), its official WebAssembly build
+const SOLVER_URL = "https://cdn.jsdelivr.net/npm/connect-four-ai-wasm@1.0.0/connect_four_ai_wasm.js";
 const params = new URLSearchParams(location.search);
 const MODEL_F32 = params.get("model") || `${HF}/onepass-c4-v2.onnx`;
 const MODEL_INT8 = params.get("int8") || `${HF}/onepass-c4-v2-int8.onnx`;
@@ -158,7 +162,7 @@ const median = (a) => { const s = a.slice().sort((x, y) => x - y); return s.leng
 const pct = (a, p) => { const s = a.slice().sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
 const mb = (bytes) => `${(bytes / 1e6).toFixed(1)} MB`;
 const kb = (bytes) => (bytes < 1e6 ? `${(bytes / 1e3).toFixed(0)} KB` : mb(bytes));
-const ms = (x) => (Number.isFinite(x) ? `${x < 10 ? x.toFixed(1) : x.toFixed(0)} ms` : "");
+const ms = (x) => (!Number.isFinite(x) ? "" : x >= 1000 ? `${(x / 1000).toFixed(1)} s` : `${x < 10 ? x.toFixed(1) : x.toFixed(0)} ms`);
 
 // ---- game state (row 0 = bottom; X moves first and plays red) -------------
 let grid, moves, toMove, over, humanSide = "X", busy = false;
@@ -272,6 +276,34 @@ async function makeGpuEngine(key, planUrl, detail, css, bytes) {
     key, label: "onepass-webgpu", detail, css, engine, setupMs,
     bytes: bytes.length, times: [],
     score: ({ context, optionIds, optionMask }) => engine.score(context, optionIds, optionMask),
+  };
+}
+
+// The solver searches the game tree (with a built-in opening book); it has no model file. Its "scores" are the
+// exact game values of each column (higher is better), so the highest is a perfect move.
+async function makeSolverEngine() {
+  const t = performance.now();
+  const mod = await import(SOLVER_URL);
+  await mod.default();
+  const solver = new mod.Solver();
+  const setupMs = performance.now() - t;
+  const boardString = () => {
+    let s = "";
+    for (let r = H - 1; r >= 0; r -= 1) for (let c = 0; c < W; c += 1) {
+      const v = grid[r][c];
+      s += v === null ? "." : v === toMove ? "x" : "o";
+    }
+    return s;
+  };
+  return {
+    key: "solver", label: "Perfect solver", detail: "connect-four-ai, WebAssembly (search, no model)", css: "solver",
+    setupMs, bytes: null, times: [],
+    score: async ({ cols }) => {
+      const pos = mod.Position.fromBoardString(boardString());
+      const scores = solver.getAllMoveScores(pos);
+      pos.free?.();
+      return Float32Array.from(cols, (c) => scores[c]);
+    },
   };
 }
 
@@ -427,7 +459,7 @@ function setStatus(text, sub = "", disc = "none", result = null) {
 }
 
 // ---- tables ---------------------------------------------------------------------
-const order = () => ["gpu", "gpu8", "wasm8", "wasm32"].filter((k) => engines[k]);
+const order = () => ["gpu", "gpu8", "wasm8", "wasm32", "solver"].filter((k) => engines[k]);
 
 function renderMoveTimes(last = {}) {
   $("move-times").innerHTML = order().map((k) => {
@@ -441,7 +473,7 @@ function renderLoads() {
   $("loads").innerHTML = order().map((k) => {
     const e = engines[k];
     return `<tr><td><span class="tag ${e.css}"></span>${e.label}<span class="sub2">${e.detail}</span></td>
-      <td class="num">${e.codeBytes ? kb(e.codeBytes) : ""}</td><td class="num">${mb(e.bytes)}</td>
+      <td class="num">${e.codeBytes ? kb(e.codeBytes) : ""}</td><td class="num">${e.bytes ? mb(e.bytes) : "none"}</td>
       <td class="num">${ms(e.setupMs + (e.firstMs ?? 0))}</td></tr>`;
   }).join("");
 }
@@ -454,6 +486,7 @@ function codeSizes() {
   const ortBytes = sum((u) => u.includes("onnxruntime-web"));
   for (const k of ["gpu", "gpu8"]) if (engines[k]) engines[k].codeBytes = gpu;
   for (const k of ["wasm8", "wasm32"]) if (engines[k]) engines[k].codeBytes = ortBytes;
+  if (engines.solver) engines.solver.codeBytes = sum((u) => u.includes("connect-four-ai-wasm"));
 }
 
 // ---- play -------------------------------------------------------------------------
@@ -468,24 +501,37 @@ async function aiMove() {
   const last = {};
   let chosen = null;
   const picks = {};
+  let solverBest = null;
   for (const k of order()) {
     const d = await decide(engines[k]);
     engines[k].times.push(d.ms);
     last[k] = d.ms;
     picks[k] = d.col;
     if (engines[k] === player()) chosen = d.col;
+    if (k === "solver") {
+      const top = Math.max(...d.logits);
+      solverBest = encodeDecision().cols.filter((_, i) => d.logits[i] === top);
+    }
   }
   renderMoveTimes(last);
-  const agree = order().every((k) => picks[k] === chosen);
-  $("agree").textContent = agree ? `All engines chose column ${chosen + 1}.`
-    : `Engines chose: ${order().map((k) => `${engines[k].label} (${engines[k].detail}) column ${picks[k] + 1}`).join(", ")}. `
+  const models = order().filter((k) => k !== "solver");
+  const agree = models.every((k) => picks[k] === chosen);
+  let text = agree ? `All model engines chose column ${chosen + 1}.`
+    : `The model engines chose: ${models.map((k) => `${engines[k].label} (${engines[k].detail}) column ${picks[k] + 1}`).join(", ")}. `
       + "int8 weights are a slightly different model, so an occasional different choice is expected there.";
+  if (solverBest) {
+    text += solverBest.includes(chosen)
+      ? ` The perfect solver agrees: column ${chosen + 1} is ${solverBest.length > 1 ? "one of the best moves" : "the best move"}.`
+      : ` The perfect solver would have played column ${solverBest.map((c) => c + 1).join(" or ")}.`;
+  }
+  $("agree").textContent = text;
   const row = drop(chosen, aiSide());
   paint(row, chosen, aiSide());
 }
 
 async function warmUp() {
   for (const k of order()) {
+    if (k === "solver") continue; // CPU only: nothing to wake, and a warm-up would double its search
     if (engines[k].engine) await engines[k].engine.wake();
     else await engines[k].score(encodeDecision());
   }
@@ -550,6 +596,7 @@ function randomPositions(n, seed = 1) {
 }
 
 async function race(n = 200, warm = 10) {
+  let solverTimes = [];
   const saved = { grid, moves, toMove, over };
   const positions = randomPositions(n + warm);
   const result = {};
@@ -562,6 +609,7 @@ async function race(n = 200, warm = 10) {
       if (i % 20 === 0) { $("race-progress").textContent = `${engines[k].label}, ${engines[k].detail}: ${i}/${positions.length}`; await sleep(0); }
     }
     result[k] = { median: median(times), p95: pct(times, 0.95), mean: times.reduce((a, b) => a + b, 0) / times.length };
+    if (k === "solver") solverTimes = times;
   }
   ({ grid, moves, toMove, over } = saved);
   $("race-progress").textContent = "";
@@ -570,11 +618,16 @@ async function race(n = 200, warm = 10) {
       <span class="sub2">${engines[k].detail}</span></span>
     <div class="bar ${engines[k].css}" style="width:${(100 * result[k].median) / top}%"></div>
     <span class="num">${ms(result[k].median)}</span>`).join("");
+  if (result.solver) {
+    result.solver.max = Math.max(...solverTimes);
+  }
   if (result.gpu && result.wasm8) {
     $("race-note").textContent = `Median per move. WebGPU is ${(result.wasm8.median / result.gpu.median).toFixed(1)}x faster than `
       + `the main demo's engine (wasm, int8) here: ${(1000 / result.gpu.median).toFixed(0)} vs ${(1000 / result.wasm8.median).toFixed(0)} moves per second`
       + (result.gpu8 ? `; with the int8 file ${ms(result.gpu8.median)}. ` : ". ")
-      + `p95: ${order().map((k) => `${engines[k].label} ${engines[k].detail} ${ms(result[k].p95)}`).join(", ")}.`;
+      + `p95: ${order().map((k) => `${engines[k].label} ${engines[k].detail} ${ms(result[k].p95)}`).join(", ")}.`
+      + (result.solver ? ` The perfect solver: median ${ms(result.solver.median)}, mean ${ms(result.solver.mean)}, slowest ${ms(result.solver.max)}; `
+        + "fast when its opening book or a short endgame answers, slow when it has to search. The model takes the same time on every position." : "");
   }
   return result;
 }
@@ -631,6 +684,10 @@ setStatus("Loading…", "Downloading the model: the fp32 file (29.7 MB) and the 
   // the int8 engine first: it pays onnxruntime-web's one-time WebAssembly start-up, as in the main demo
   if (int8) engines.wasm8 = await makeOrtEngine("wasm8", "onnxruntime-web", "wasm, int8 (the main demo)", "wasm", int8.bytes);
   engines.wasm32 = await makeOrtEngine("wasm32", "onnxruntime-web", "wasm, fp32 (same file as WebGPU)", "wasm32", f32.bytes);
+  if (!params.has("parity")) {
+    try { engines.solver = await makeSolverEngine(); }
+    catch (error) { log(`perfect solver not loaded: ${error.message || error}`); }
+  }
   let gpuError = null;
   if (!navigator.gpu) gpuError = "this browser has no WebGPU";
   else {

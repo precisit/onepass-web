@@ -16,6 +16,15 @@ While you think, the GPU and CPU slow down to save power, and the first decision
 and the timed decision comes right after. Without it, single moves in a game looked several times slower
 than in the race.
 
+**The perfect solver, for comparison.** Connect Four is solved, so the page also times an exact solver,
+[connect-four-ai](https://github.com/benjaminrall/connect-four-ai) (MIT), through its official WebAssembly build
+(1.3 MB, with a built-in opening book). It is a search, not a model: instant when its opening book or a short
+endgame answers, and up to several seconds right after the book runs out. The model takes about the same time on
+every move. After each AI move the page says whether the model's move is one the solver rates best. In 200 full
+games of perfect play on an idle Apple M5 Pro (onepass-webgpu `bench/results/2026-09-27-M5Pro-chrome-solver-games.json`):
+the solver took under 0.1 ms per move at the median, 40 ms on average and 6.9 s at worst; onepass-webgpu took
+1.2 ms at the median and 2.2 ms at worst, on the same positions.
+
 ## Checks
 
 - **Encoder self-test:** the page re-encodes reference positions and compares the bytes with the Python tooling.
