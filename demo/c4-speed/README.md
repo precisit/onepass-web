@@ -9,7 +9,11 @@ The Connect Four model from [`demo/c4`](../c4/) (v2, 7.4 M parameters), run two 
   (7.7 MB) and are unpacked inside the matrix multiply, with float math.
 
 Play a game: the WebGPU runtime picks the AI's moves, and every move is also scored and timed by the other
-engines. "Run the race" times each engine on the same 200 positions. The main demo is unchanged.
+engines. "Run the race" times each engine on the same 200 positions, taken from 30 complete games (quick rule-based
+players), so openings, middle games and endgames all appear. The result is drawn as a spread (fastest, middle half,
+median, mean, slowest, on a log time axis), because the engines differ in their spread, not only in their median:
+the model takes about the same time on every move, the perfect solver anything from under 0.1 ms to seconds.
+The main demo is unchanged.
 
 While you think, the GPU and CPU slow down to save power, and the first decision after a pause would pay
 10 to 100 ms to wake them. So when you click, each engine gets one untimed warm-up run while your disc drops,
