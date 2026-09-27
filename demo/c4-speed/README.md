@@ -36,18 +36,19 @@ Measured under the frozen [speed protocol](https://github.com/precisit/onepass-w
 (500 eval positions after 20 warm-up moves, one at a time, three runs, median of medians). The records are in
 [`bench/results/`](https://github.com/precisit/onepass-webgpu/tree/main/bench/results).
 
-Apple M1 Max, Chrome 153 (headless, Metal adapter), on a machine shared with other jobs:
+Apple M5 Pro, idle (load average about 1), Chrome 154 (headless, Metal adapter), runtime commit `94c8af9`:
 
-| engine | model file | median per move | p95 | set-up + first move | runtime code (gzip) |
+| engine | model file | median per move | p95 | engine set-up + first move | runtime code (gzip) |
 | --- | --- | ---: | ---: | ---: | ---: |
-| onepass-webgpu, f32 | fp32 ONNX, 29.7 MB | **4.1 ms** | 5.1 ms | 144 ms | **22 KB (7 KB)** |
-| onepass-webgpu, f16 weights | the same file | 3.9 ms | 4.4 ms | 127 ms | 22 KB (7 KB) |
-| onnxruntime-web, wasm (the main demo) | int8 ONNX, 7.8 MB | 20.4 ms | 21.4 ms | 398 ms | 14.3 MB (3.7 MB) |
-| onnxruntime-web, wasm | fp32 ONNX, 29.7 MB | 19.5 ms | 21.2 ms | 385 ms | 14.3 MB (3.7 MB) |
+| onepass-webgpu, f32 | fp32 ONNX, 29.7 MB | **1.3 ms** | 1.4 ms | 28 ms | 37 KB (12 KB) |
+| onepass-webgpu, f16 weights | the same file | **0.9 ms** | 1.1 ms | 30 ms | 37 KB (12 KB) |
+| onepass-webgpu, int8 weights | int8 ONNX, 7.8 MB | **1.0 ms** | 1.1 ms | 23 ms | 37 KB (12 KB) |
+| onnxruntime-web, wasm (the main demo) | int8 ONNX, 7.8 MB | 12.7 ms | 12.9 ms | 180 ms | 14.3 MB (3.7 MB) |
+| onnxruntime-web, wasm | fp32 ONNX, 29.7 MB | 12.2 ms | 12.3 ms | 184 ms | 14.3 MB (3.7 MB) |
 
-The int8 WebGPU row is new; its protocol numbers will be added with the next record (in the page's race
-it runs at about the same speed as the f32 row).
-The page's own "race" is a quick check, not the protocol: expect similar ratios, with more noise.
+This page vendors an earlier 24 KB build of the runtime with the same kernels; the 37 KB build adds loading any
+unchanged ONNX file of this model family in the browser. The page's own "race" is a quick check, not the protocol:
+expect similar ratios, with more noise, on a busy machine.
 
 ## Files
 
