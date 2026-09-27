@@ -58,8 +58,18 @@
   .tag { display: inline-block; width: .7rem; height: .7rem; border-radius: .2rem; margin-right: .4rem; vertical-align: -1px; }
   .tag.gpu { background: var(--gpu); } .tag.gpu8 { background: var(--gpu8); } .tag.wasm { background: var(--wasm); } .tag.wasm32 { background: var(--wasm32); } .tag.solver { background: var(--solver); }
   .sub2 { display: block; color: var(--muted); font-size: .74rem; }
-  .bars { display: grid; grid-template-columns: max-content 1fr max-content; gap: .35rem .6rem; align-items: center; font-size: .84rem; margin-top: .6rem; }
-  .bar { height: .9rem; border-radius: .25rem; min-width: 2px; }
+  .spread { display: grid; grid-template-columns: minmax(8.5rem, max-content) 1fr; gap: .45rem .7rem; align-items: center;
+            font-size: .84rem; margin-top: .7rem; }
+  .spread svg { display: block; width: 100%; height: 1.5rem; overflow: visible; }
+  .axis { position: relative; height: 1.1rem; font-size: .7rem; color: var(--muted); }
+  .axis span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+  .legend-line { font-size: .74rem; color: var(--muted); margin: .45rem 0 0; }
+  @media (max-width: 560px) {
+    .spread { grid-template-columns: minmax(0, 1fr); gap: .15rem; }
+    .spread > span:empty { display: none; }
+    .spread svg { margin-bottom: .45rem; }
+  }
+  .raceTable { margin-top: .6rem; }
   .bar.gpu { background: var(--gpu); } .bar.gpu8 { background: var(--gpu8); } .bar.wasm { background: var(--wasm); } .bar.wasm32 { background: var(--wasm32); } .bar.solver { background: var(--solver); }
   .big { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
   .fine { font-size: .78rem; color: var(--muted); margin: .7rem 0 0; }
@@ -104,7 +114,7 @@
       perfect solver (a search, not a model) is there for comparison.
       Time is from the board going in to the scores coming back in JavaScript.</p>
       <table>
-        <thead><tr><th>engine</th><th class="num">this move</th><th class="num">median</th><th class="num">moves</th></tr></thead>
+        <thead><tr><th>engine</th><th class="num">this move</th><th class="num">median</th><th class="num">slowest</th><th class="num">moves</th></tr></thead>
         <tbody id="move-times"></tbody>
       </table>
       <p class="fine" id="agree"></p>
@@ -114,9 +124,10 @@
     </section>
     <section class="panel">
       <h2>Race: 200 positions</h2>
-      <p class="what">Each engine scores the same 200 positions from random games, one at a time, after 10 warm-up moves.</p>
+      <p class="what">Each engine scores the same 200 positions, one at a time, after 10 warm-up moves. The positions come
+      from 30 complete games (quick rule-based players), 7 from each, so openings, middle games and endgames all appear.</p>
       <div class="row"><button class="primary" id="race" disabled>Run the race</button><span class="fine" id="race-progress" style="margin:0"></span></div>
-      <div class="bars" id="race-bars"></div>
+      <div id="race-chart"></div>
       <p class="fine" id="race-note"></p>
     </section>
     <section class="panel">
@@ -162,7 +173,8 @@ const median = (a) => { const s = a.slice().sort((x, y) => x - y); return s.leng
 const pct = (a, p) => { const s = a.slice().sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
 const mb = (bytes) => `${(bytes / 1e6).toFixed(1)} MB`;
 const kb = (bytes) => (bytes < 1e6 ? `${(bytes / 1e3).toFixed(0)} KB` : mb(bytes));
-const ms = (x) => (!Number.isFinite(x) ? "" : x >= 1000 ? `${(x / 1000).toFixed(1)} s` : `${x < 10 ? x.toFixed(1) : x.toFixed(0)} ms`);
+const ms = (x) => (!Number.isFinite(x) ? "" : x >= 1000 ? `${(x / 1000).toFixed(1)} s`
+  : x < 0.1 ? "< 0.1 ms" : `${x < 10 ? x.toFixed(1) : x.toFixed(0)} ms`); // browsers time in 0.1 ms steps
 
 // ---- game state (row 0 = bottom; X moves first and plays red) -------------
 let grid, moves, toMove, over, humanSide = "X", busy = false;
@@ -465,7 +477,8 @@ function renderMoveTimes(last = {}) {
   $("move-times").innerHTML = order().map((k) => {
     const e = engines[k];
     return `<tr><td><span class="tag ${e.css}"></span>${e.label}<span class="sub2">${e.detail}</span></td>
-      <td class="num">${ms(last[k])}</td><td class="num">${ms(median(e.times))}</td><td class="num">${e.times.length}</td></tr>`;
+      <td class="num">${ms(last[k])}</td><td class="num">${ms(median(e.times))}</td>
+      <td class="num">${e.times.length ? ms(Math.max(...e.times)) : ""}</td><td class="num">${e.times.length}</td></tr>`;
   }).join("");
 }
 
@@ -576,29 +589,92 @@ async function newGame() {
 }
 
 // ---- race -------------------------------------------------------------------------
-function randomPositions(n, seed = 1) {
+// Race positions from complete games. The players are quick and rule-based (win if possible, else block, else
+// prefer central columns, sometimes a random move), so the games are varied and reach the middle and the end.
+function gamePositions(games = 30, perGame = 7, seed = 7) {
   let s = seed >>> 0;
   const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 2 ** 32; };
-  const boards = [];
-  while (boards.length < n) {
-    reset();
-    const plies = Math.floor(rnd() * 30);
-    let ok = true;
-    for (let i = 0; i < plies && ok; i += 1) {
-      const cols = legal();
-      drop(cols[Math.floor(rnd() * cols.length)], toMove);
-      toMove = toMove === "X" ? "O" : "X";
-      if (winLine() || !legal().length) ok = false;
+  const other = (p) => (p === "X" ? "O" : "X");
+  const wins = (col, who) => {
+    const row = drop(col, who);
+    const won = winLine()?.who === who;
+    grid[row][col] = null;
+    moves.pop();
+    return won;
+  };
+  const pick = () => {
+    const cols = legal();
+    const win = cols.find((c) => wins(c, toMove));
+    if (win !== undefined) return win;
+    const block = cols.find((c) => wins(c, other(toMove)));
+    if (block !== undefined) return block;
+    if (rnd() < 0.15) return cols[Math.floor(rnd() * cols.length)];
+    const weight = (c) => 4 - Math.abs(c - 3);
+    let r = rnd() * cols.reduce((t, c) => t + weight(c), 0);
+    for (const c of cols) { r -= weight(c); if (r <= 0) return c; }
+    return cols[cols.length - 1];
+  };
+  const positions = [];
+  for (let g = 0; g < games; g += 1) {
+    // game state only: the board on screen is left alone (race() restores the state afterwards)
+    grid = Array.from({ length: H }, () => Array(W).fill(null));
+    moves = [];
+    toMove = "X";
+    const seen = [];
+    while (legal().length && !winLine()) {
+      seen.push({ grid: grid.map((r) => r.slice()), moves: moves.slice(), toMove });
+      drop(pick(), toMove);
+      toMove = other(toMove);
     }
-    if (ok) boards.push({ grid: grid.map((r) => r.slice()), moves: moves.slice(), toMove });
+    for (let i = 0; i < perGame && seen.length; i += 1) positions.push(seen.splice(Math.floor(rnd() * seen.length), 1)[0]);
   }
-  return boards;
+  return positions;
+}
+
+function spreadStats(times) {
+  const s = times.slice().sort((a, b) => a - b);
+  const at = (p) => s[Math.min(s.length - 1, Math.floor(p * s.length))];
+  return { min: s[0], p25: at(0.25), median: at(0.5), mean: times.reduce((a, b) => a + b, 0) / times.length,
+           p75: at(0.75), p95: at(0.95), max: s[s.length - 1] };
+}
+
+// One row per engine on a log time axis: a line from the fastest to the slowest move, a box for the middle half,
+// a tick at the median and a dot at the mean. Times under 0.1 ms (the browser's timer step) sit at the left edge.
+function renderRace(result) {
+  const lo = Math.log10(0.05), hi = Math.log10(Math.max(10000, ...Object.values(result).map((r) => r.max)));
+  const x = (v) => (100 * (Math.log10(Math.max(v, 0.05)) - lo)) / (hi - lo);
+  const ticks = [0.1, 1, 10, 100, 1000, 10000].filter((t) => Math.log10(t) <= hi);
+  const tickLabel = (t) => (t >= 1000 ? `${t / 1000} s` : `${t} ms`);
+  const rows = order().filter((k) => result[k]).map((k) => {
+    const r = result[k];
+    const color = `var(--${engines[k].css})`;
+    const grid_ = ticks.map((t) => `<line x1="${x(t)}" x2="${x(t)}" y1="0" y2="20" stroke="#e3e8ef" stroke-width="0.3" vector-effect="non-scaling-stroke"/>`).join("");
+    return `<span><span class="tag ${engines[k].css}"></span>${engines[k].label}<span class="sub2">${engines[k].detail}</span></span>
+      <svg viewBox="0 0 100 20" preserveAspectRatio="none" role="img"
+        aria-label="${engines[k].label}: median ${ms(r.median)}, mean ${ms(r.mean)}, slowest ${ms(r.max)}">
+        ${grid_}
+        <line x1="${x(r.min)}" x2="${x(r.max)}" y1="10" y2="10" style="stroke:${color}" stroke-width="2" vector-effect="non-scaling-stroke"/>
+        <line x1="${x(r.max)}" x2="${x(r.max)}" y1="5" y2="15" style="stroke:${color}" stroke-width="2" vector-effect="non-scaling-stroke"/>
+        <rect x="${x(r.p25)}" y="4" width="${Math.max(0.6, x(r.p75) - x(r.p25))}" height="12" rx="1" style="fill:${color}" opacity="0.85"/>
+        <line x1="${x(r.median)}" x2="${x(r.median)}" y1="1" y2="19" stroke="#16202e" stroke-width="2.5" vector-effect="non-scaling-stroke"/>
+        <rect x="${x(r.mean) - 0.5}" y="7.5" width="1" height="5" fill="#fff" stroke="#16202e" stroke-width="1" vector-effect="non-scaling-stroke"/>
+      </svg>`;
+  }).join("");
+  const axis = `<span></span><div class="axis">${ticks.map((t) => `<span style="left:${x(t)}%${x(t) > 96 ? ";transform:translateX(-100%)" : ""}">${tickLabel(t)}</span>`).join("")}</div>`;
+  const table = `<table class="raceTable"><thead><tr><th>engine</th><th class="num">median</th><th class="num">mean</th>
+      <th class="num">p95</th><th class="num">slowest</th></tr></thead><tbody>${order().filter((k) => result[k]).map((k) => {
+        const r = result[k];
+        return `<tr><td><span class="tag ${engines[k].css}"></span>${engines[k].label}<span class="sub2">${engines[k].detail}</span></td>
+          <td class="num">${ms(r.median)}</td><td class="num">${ms(r.mean)}</td><td class="num">${ms(r.p95)}</td><td class="num">${ms(r.max)}</td></tr>`;
+      }).join("")}</tbody></table>`;
+  $("race-chart").innerHTML = `<div class="spread">${rows}${axis}</div>
+    <p class="legend-line">Log scale. Line: fastest to slowest move. Box: the middle half of moves. Dark tick: median.
+    White dot: mean.</p>${table}`;
 }
 
 async function race(n = 200, warm = 10) {
-  let solverTimes = [];
   const saved = { grid, moves, toMove, over };
-  const positions = randomPositions(n + warm);
+  const positions = gamePositions(Math.ceil((n + warm) / 7), 7).slice(0, n + warm);
   const result = {};
   for (const k of order()) {
     const times = [];
@@ -608,26 +684,18 @@ async function race(n = 200, warm = 10) {
       if (i >= warm) times.push(d.ms);
       if (i % 20 === 0) { $("race-progress").textContent = `${engines[k].label}, ${engines[k].detail}: ${i}/${positions.length}`; await sleep(0); }
     }
-    result[k] = { median: median(times), p95: pct(times, 0.95), mean: times.reduce((a, b) => a + b, 0) / times.length };
-    if (k === "solver") solverTimes = times;
+    result[k] = spreadStats(times);
   }
   ({ grid, moves, toMove, over } = saved);
   $("race-progress").textContent = "";
-  const top = Math.max(...Object.values(result).map((r) => r.median));
-  $("race-bars").innerHTML = order().map((k) => `<span><span class="tag ${engines[k].css}"></span>${engines[k].label}
-      <span class="sub2">${engines[k].detail}</span></span>
-    <div class="bar ${engines[k].css}" style="width:${(100 * result[k].median) / top}%"></div>
-    <span class="num">${ms(result[k].median)}</span>`).join("");
-  if (result.solver) {
-    result.solver.max = Math.max(...solverTimes);
-  }
+  renderRace(result);
   if (result.gpu && result.wasm8) {
-    $("race-note").textContent = `Median per move. WebGPU is ${(result.wasm8.median / result.gpu.median).toFixed(1)}x faster than `
-      + `the main demo's engine (wasm, int8) here: ${(1000 / result.gpu.median).toFixed(0)} vs ${(1000 / result.wasm8.median).toFixed(0)} moves per second`
-      + (result.gpu8 ? `; with the int8 file ${ms(result.gpu8.median)}. ` : ". ")
-      + `p95: ${order().map((k) => `${engines[k].label} ${engines[k].detail} ${ms(result[k].p95)}`).join(", ")}.`
-      + (result.solver ? ` The perfect solver: median ${ms(result.solver.median)}, mean ${ms(result.solver.mean)}, slowest ${ms(result.solver.max)}; `
-        + "fast when its opening book or a short endgame answers, slow when it has to search. The model takes the same time on every position." : "");
+    $("race-note").textContent = `onepass-webgpu is ${(result.wasm8.median / result.gpu.median).toFixed(1)}x faster than the main demo's `
+      + `engine (wasm, int8) at the median and ${(result.wasm8.mean / result.gpu.mean).toFixed(1)}x on average, and the model takes `
+      + "about the same time on every position."
+      + (result.solver ? ` The perfect solver is instant when its opening book or a short endgame answers (median `
+        + `${ms(result.solver.median)}), but it has to search in the middle game: mean ${ms(result.solver.mean)}, slowest `
+        + `${ms(result.solver.max)}.` : "");
   }
   return result;
 }
