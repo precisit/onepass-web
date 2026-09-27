@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Connect Four: one model, two runtimes</title>
+<title>Connect Four: one model, two runtimes (Speed)</title>
 <style>
   :root {
     --board: #10457a; --hole: #eef2f7; --red: #e8503a; --yellow: #f7c948;
@@ -64,6 +64,7 @@
   .axis { position: relative; height: 1.1rem; font-size: .7rem; color: var(--muted); }
   .axis span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
   .legend-line { font-size: .74rem; color: var(--muted); margin: .45rem 0 0; }
+  td.best { font-weight: 700; color: #1d4ed8; background: #e0edff; }
   @media (max-width: 560px) {
     .spread { grid-template-columns: minmax(0, 1fr); gap: .15rem; }
     .spread > span:empty { display: none; }
@@ -79,13 +80,11 @@
 </head>
 <body>
 <header>
-  <h1>Connect Four: one model, two runtimes</h1>
-  <p class="lede">The same 7.4 M parameter Connect Four model as in the <a href="../c4/">main demo</a>, run two ways
-  in your browser: with onnxruntime-web on WebAssembly (what the main demo uses), and with
-  <a href="https://github.com/precisit/onepass-webgpu">onepass-webgpu</a>, a 24 KB WebGPU runtime written for
-  this kind of model, which can read either the fp32 file or the same 7.8 MB int8 file as the main demo. Play a
-  game: the WebGPU runtime picks the moves, and every move is also timed on the other engines, and on a perfect
-  Connect Four solver for comparison.</p>
+  <h1>Connect Four: one model, two runtimes (Speed)</h1>
+  <p class="lede">Can the same 7.4 M parameter model as in the <a href="../c4/">main demo</a> run faster? Yes: with
+  custom kernels in <a href="https://github.com/precisit/onepass-webgpu">onepass-webgpu</a>, a small WebGPU runtime,
+  from the fp32 file or the main demo's int8 file, compared with onnxruntime-web on WebAssembly. A perfect Connect Four
+  solver is timed alongside: faster on most moves, but far less consistent.</p>
 </header>
 <main class="layout">
   <section class="game">
@@ -110,23 +109,17 @@
   <aside class="side">
     <section class="panel">
       <h2>Time per move</h2>
-      <p class="what">Every AI move is scored by every engine, one after the other, on the same position; the
-      perfect solver (a search, not a model) is there for comparison.
-      Time is from the board going in to the scores coming back in JavaScript.</p>
+      <p class="what">Every AI move is scored by every engine, one after the other.</p>
       <table>
         <thead><tr><th>engine</th><th class="num">this move</th><th class="num">median</th><th class="num">slowest</th><th class="num">moves</th></tr></thead>
         <tbody id="move-times"></tbody>
       </table>
       <p class="fine" id="agree"></p>
-      <p class="fine">While you think, the GPU and CPU slow down to save power, and the first decision after
-      a pause would pay for waking them (10-100 ms on the GPU). So when you click, each engine gets one
-      untimed warm-up run while your disc drops, and the timed decision follows.</p>
     </section>
     <section class="panel">
-      <h2>Race: 200 positions</h2>
-      <p class="what">Each engine scores the same 200 positions, one at a time, after 10 warm-up moves. The positions come
-      from 30 complete games (quick rule-based players), 7 from each, so openings, middle games and endgames all appear.</p>
-      <div class="row"><button class="primary" id="race" disabled>Run the race</button><span class="fine" id="race-progress" style="margin:0"></span></div>
+      <h2>Benchmark: 200 boards</h2>
+      <p class="what">Each engine scores the same 200 boards from 30 complete games, one at a time.</p>
+      <div class="row"><button class="primary" id="race" disabled>Run the benchmark</button><span class="fine" id="race-progress" style="margin:0"></span></div>
       <div id="race-chart"></div>
       <p class="fine" id="race-note"></p>
     </section>
@@ -136,12 +129,16 @@
         <thead><tr><th>engine</th><th class="num">runtime code</th><th class="num">model file</th><th class="num">start-up</th></tr></thead>
         <tbody id="loads"></tbody>
       </table>
-      <p class="fine">Start-up = creating the engine from the downloaded file, plus its first move. The model
-      download itself depends on your network and is not included. onnxruntime-web starts its WebAssembly
-      once, in the first engine (int8). The WebGPU runtime reads its weights straight from the unchanged ONNX
-      files; with the int8 file the weights stay 8-bit on the GPU and are unpacked inside the matrix multiply,
-      with float math (weights only: onnxruntime-web also rounds the activations to 8 bits, so their scores differ
-      slightly). Code sizes are as decoded by the browser.</p>
+      <p class="fine">Start-up is loading the engine in your browser and its first move, not the download.</p>
+    </section>
+    <section class="panel">
+      <h2>Comparison</h2>
+      <p class="what">Lower is better; the best in each column is highlighted. Times fill in after the benchmark.</p>
+      <table>
+        <thead><tr><th>engine</th><th class="num">size (runtime + model)</th><th class="num">start-up</th>
+          <th class="num">median</th><th class="num">mean</th><th class="num">p95</th></tr></thead>
+        <tbody id="compare"></tbody>
+      </table>
     </section>
     <details class="panel" id="tech">
       <summary>Technical checks</summary>
@@ -491,6 +488,26 @@ function renderLoads() {
   }).join("");
 }
 
+let lastRace = null;
+
+// Comparison: size, start-up and the benchmark times per engine; the lowest value in each column is highlighted.
+function renderCompare() {
+  const rows = order().map((k) => {
+    const e = engines[k];
+    const r = lastRace?.[k];
+    return { k, e, cells: [e.codeBytes ? e.codeBytes + (e.bytes ?? 0) : null, e.setupMs + (e.firstMs ?? 0),
+                           r?.median ?? null, r?.mean ?? null, r?.p95 ?? null] };
+  });
+  const fmt = [(v) => (v >= 1e6 ? mb(v) : kb(v)), ms, ms, ms, ms];
+  const best = [0, 1, 2, 3, 4].map((i) => {
+    const vals = rows.map((row) => row.cells[i]).filter((v) => Number.isFinite(v));
+    return vals.length ? Math.min(...vals) : null;
+  });
+  $("compare").innerHTML = rows.map(({ e, cells }) => `<tr><td><span class="tag ${e.css}"></span>${e.label}
+      <span class="sub2">${e.detail}</span></td>${cells.map((v, i) => `<td class="num${Number.isFinite(v) && v === best[i] ? " best" : ""}">${
+        Number.isFinite(v) ? fmt[i](v) : ""}</td>`).join("")}</tr>`).join("");
+}
+
 function codeSizes() {
   // bytes of the JavaScript and WebAssembly each runtime needed (as decoded by the browser)
   const entries = performance.getEntriesByType("resource");
@@ -689,6 +706,8 @@ async function race(n = 200, warm = 10) {
   ({ grid, moves, toMove, over } = saved);
   $("race-progress").textContent = "";
   renderRace(result);
+  lastRace = result;
+  renderCompare();
   if (result.gpu && result.wasm8) {
     $("race-note").textContent = `onepass-webgpu is ${(result.wasm8.median / result.gpu.median).toFixed(1)}x faster than the main demo's `
       + `engine (wasm, int8) at the median and ${(result.wasm8.mean / result.gpu.mean).toFixed(1)}x on average, and the model takes `
@@ -782,6 +801,7 @@ setStatus("Loading…", "Downloading the model: the fp32 file (29.7 MB) and the 
   for (const k of order()) engines[k].firstMs = (await decide(engines[k])).ms;
   codeSizes();
   renderLoads();
+  renderCompare();
   renderMoveTimes();
   const parityEngine = engines[params.get("engine") ?? "gpu"];
   if (params.has("parity") && parityEngine) report.parity = await parity(params.get("parity"), parityEngine);
