@@ -16,7 +16,7 @@
          font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   header { max-width: 1120px; margin: 0 auto 1.1rem; }
   h1 { font-size: 1.45rem; margin: 0 0 .3rem; letter-spacing: -.01em; }
-  .lede { color: var(--muted); margin: 0; max-width: 48rem; }
+  .lede { color: var(--muted); margin: 0; }
   .lede a, .fine a { color: var(--accent); }
   .layout { max-width: 1120px; margin: 0 auto; display: grid; gap: 1.25rem;
             grid-template-columns: minmax(0, 520px) minmax(0, 1fr); align-items: start; }
@@ -65,6 +65,8 @@
   .axis span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
   .legend-line { font-size: .74rem; color: var(--muted); margin: .45rem 0 0; }
   td.best { font-weight: 700; color: #1d4ed8; background: #e0edff; }
+  td.worst { font-weight: 700; color: #b91c1c; background: #fde8e8; }
+  .progress { min-height: 1.2em; margin: .1rem 0 0; }
   @media (max-width: 560px) {
     .spread { grid-template-columns: minmax(0, 1fr); gap: .15rem; }
     .spread > span:empty { display: none; }
@@ -119,7 +121,8 @@
     <section class="panel">
       <h2>Benchmark: 200 boards</h2>
       <p class="what">Each engine scores the same 200 boards from 30 complete games, one at a time.</p>
-      <div class="row"><button class="primary" id="race" disabled>Run the benchmark</button><span class="fine" id="race-progress" style="margin:0"></span></div>
+      <div class="row"><button class="primary" id="race" disabled>Run the benchmark</button></div>
+      <p class="fine progress" id="race-progress"></p>
       <div id="race-chart"></div>
       <p class="fine" id="race-note"></p>
     </section>
@@ -133,7 +136,7 @@
     </section>
     <section class="panel">
       <h2>Comparison</h2>
-      <p class="what">Lower is better; the best in each column is highlighted. Times fill in after the benchmark.</p>
+      <p class="what">Lower is better; the best in each column is blue, the worst red. Times fill in after the benchmark.</p>
       <table>
         <thead><tr><th>engine</th><th class="num">size (runtime + model)</th><th class="num">start-up</th>
           <th class="num">median</th><th class="num">mean</th><th class="num">p95</th></tr></thead>
@@ -499,12 +502,14 @@ function renderCompare() {
                            r?.median ?? null, r?.mean ?? null, r?.p95 ?? null] };
   });
   const fmt = [(v) => (v >= 1e6 ? mb(v) : kb(v)), ms, ms, ms, ms];
-  const best = [0, 1, 2, 3, 4].map((i) => {
+  const range = [0, 1, 2, 3, 4].map((i) => {
     const vals = rows.map((row) => row.cells[i]).filter((v) => Number.isFinite(v));
-    return vals.length ? Math.min(...vals) : null;
+    return vals.length > 1 ? [Math.min(...vals), Math.max(...vals)] : [null, null];
   });
+  const mark = (v, i) => (!Number.isFinite(v) || range[i][0] === range[i][1] ? ""
+    : v === range[i][0] ? " best" : v === range[i][1] ? " worst" : "");
   $("compare").innerHTML = rows.map(({ e, cells }) => `<tr><td><span class="tag ${e.css}"></span>${e.label}
-      <span class="sub2">${e.detail}</span></td>${cells.map((v, i) => `<td class="num${Number.isFinite(v) && v === best[i] ? " best" : ""}">${
+      <span class="sub2">${e.detail}</span></td>${cells.map((v, i) => `<td class="num${mark(v, i)}">${
         Number.isFinite(v) ? fmt[i](v) : ""}</td>`).join("")}</tr>`).join("");
 }
 
