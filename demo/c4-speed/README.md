@@ -1,5 +1,8 @@
 # demo/c4-speed: one model, two runtimes
 
+The story behind the runtime: [One millisecond to make a move](https://precisit.com/en/blog/onepass-webgpu-speed/)
+(also [in Swedish](https://precisit.com/blog/onepass-webgpu-speed/)).
+
 The Connect Four model from [`demo/c4`](../c4/) (v2, 7.4 M parameters), run two ways in the same page:
 
 - **onnxruntime-web 1.30, WebAssembly**, as in the main demo (int8 file, 7.8 MB; also the fp32 file);
