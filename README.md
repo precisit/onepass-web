@@ -17,6 +17,7 @@ show one in use.
 | Custom WGSL runtime | **working** for the Connect Four model: [precisit/onepass-webgpu](https://github.com/precisit/onepass-webgpu), 24 to 37 KB (8 to 12 KB gzip), same choices as ONNX Runtime on all 17 325 eval positions, 1.3 ms per move vs 12.7 ms on wasm (idle M5 Pro, Chrome, frozen speed protocol) |
 | Game demo (`demo/c4/`) | **playable, and it plays well**: v2 (7.4 M params, int8, 7.8 MB) scores 0.91 vs a depth-4 bot and beats v1 200-0 in the arena; self-testing encoders (see `demo/c4/README.md`). The story: [Meet your one-pass AI opponent](https://precisit.com/en/blog/onepass-connect-four/) |
 | Speed demo (`demo/c4-speed/`) | **live**: the Connect Four model on onnxruntime-web (wasm) and onepass-webgpu side by side, with a runtime check and a 200-board benchmark (see `demo/c4-speed/README.md`). The story: [One millisecond to make a move](https://precisit.com/en/blog/onepass-webgpu-speed/) |
+| Size demo (`demo/c4-size/`) | **live**: the ternary models (T34 1.59 MB, Base243 1.93 MB) next to the dense v2, v1 and a perfect solver on onepass-webgpu, with an arena and a size-and-play table (see `demo/c4-size/README.md`). Code and results: [precisit/onepass-webgpu-ternary](https://github.com/precisit/onepass-webgpu-ternary) |
 
 ## What we measured (headless Chromium, M4; Swedish form specialist, 706 k params, 2.82 MB ONNX, 40 option slots x 96 bytes)
 

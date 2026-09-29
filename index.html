@@ -46,6 +46,14 @@ forward pass, with no tokenizer, no generation and no server.</p>
   The story behind it: <a href="https://precisit.com/en/blog/onepass-webgpu-speed/">One millisecond to make a move</a>.</p>
 </div>
 
+<div class="card">
+  <h2><a href="demo/c4-size/">Connect Four: a smaller AI in your browser</a> (Size)</h2>
+  <p>The same kind of model with ternary weights (-1, 0 or +1 times one scale per 128 weights): a 1.6 MB file, a fifth
+  of the int8 model, at about the same level of play (0.93 against the depth-4 search bot). Play it, let it meet the
+  dense model, the first model or a perfect solver in the arena, and compare size and play in one table.
+  Code and results: <a href="https://github.com/precisit/onepass-webgpu-ternary">onepass-webgpu-ternary</a>.</p>
+</div>
+
 <h2>Measured so far</h2>
 <table>
   <tr><th>shape</th><th>provider</th><th>median per decision</th><th>decisions/s</th></tr>
