@@ -1,0 +1,1 @@
+{"semantics": "ONNX Runtime CPU on onepass-c4-8x24.onnx", "rows": [{"name": "test.jsonl line 0", "logits": [0.45989, 2.195313, 1.017256, -2.807971]}, {"name": "test.jsonl line 17", "logits": [1.154066, 1.069519, 0.180634, -1.104797, -2.954057]}, {"name": "test.jsonl line 4242", "logits": [0.484069, 1.992461, -0.941628, -1.76963]}]}
