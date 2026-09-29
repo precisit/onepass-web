@@ -21,6 +21,8 @@
   .layout { max-width: 1120px; margin: 0 auto; display: grid; gap: 1.25rem;
             grid-template-columns: minmax(0, 520px) minmax(0, 1fr); align-items: start; }
   @media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+  .wide { max-width: 1120px; margin: 1.25rem auto 0; }
+  .scroll { overflow-x: auto; }
   .game, .side { display: flex; flex-direction: column; gap: .9rem; }
   .panel { background: var(--panel); border-radius: .75rem; padding: .9rem 1.05rem;
            box-shadow: 0 1px 3px rgba(16, 32, 56, .10); }
@@ -135,23 +137,25 @@
       </table>
       <p class="fine">Start-up is loading the engine in your browser and its first move, not the download.</p>
     </section>
-    <section class="panel">
-      <h2>Comparison</h2>
-      <p class="what">Lower is better; the best in each column is blue, the worst red. Times fill in after the benchmark.</p>
-      <table>
-        <thead><tr><th>engine</th><th class="num">size (runtime + model)</th><th class="num">start-up</th>
-          <th class="num">median</th><th class="num">mean</th><th class="num">p95</th></tr></thead>
-        <tbody id="compare"></tbody>
-      </table>
-    </section>
-    <details class="panel" id="tech">
-      <summary>Technical checks</summary>
-      <p class="fine">Before the WebGPU runtime is trusted, it must agree with onnxruntime-web (wasm, same fp32
-      file) on reference positions. The encoder is also checked against the Python tooling's bytes.</p>
-      <pre id="log"></pre>
-    </details>
   </aside>
 </main>
+<section class="panel wide">
+  <h2>Comparison</h2>
+  <p class="what">Lower is better; the best in each column is blue, the worst red. Times fill in after the benchmark.</p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>engine</th><th class="num">size (runtime + model)</th><th class="num">start-up</th>
+        <th class="num">median</th><th class="num">mean</th><th class="num">p95</th></tr></thead>
+      <tbody id="compare"></tbody>
+    </table>
+  </div>
+</section>
+<details class="panel wide" id="tech">
+  <summary>Technical checks</summary>
+  <p class="fine">Before the WebGPU runtime is trusted, it must agree with onnxruntime-web (wasm, same fp32
+  file) on reference positions. The encoder is also checked against the Python tooling's bytes.</p>
+  <pre id="log"></pre>
+</details>
 <script type="module">
 import { Engine } from "./onepass-webgpu.js";
 
