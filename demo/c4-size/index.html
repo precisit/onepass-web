@@ -171,6 +171,7 @@
         <div><div class="num" id="sb-b">0</div><div class="who" id="sb-b-name"></div></div>
       </div>
       <p class="fine" id="score-ci"></p>
+      <p class="fine" id="arena-time"></p>
     </section>
   </aside>
 </main>
@@ -856,7 +857,8 @@ async function chooseCol(player) {
   return tied[Math.floor(rand() * tied.length)];
 }
 
-async function oneArenaGame(playerX, playerO, opening, paintIt) {
+// onMove(side, ms): called after every decision with "X" or "O" and the time the player took to choose
+async function oneArenaGame(playerX, playerO, opening, paintIt, onMove = () => {}) {
   reset();
   let mover = "X";
   for (let i = 0; i < opening; i += 1) {
@@ -868,7 +870,9 @@ async function oneArenaGame(playerX, playerO, opening, paintIt) {
   }
   toMove = mover;
   while (!winner() && legal().length) {
+    const started = performance.now();
     const col = await chooseCol(mover === "X" ? playerX : playerO);
+    onMove(mover, performance.now() - started);
     const row = drop(col, mover);
     if (paintIt) fastPaint(row, col, mover);
     mover = mover === "X" ? "O" : "X";
@@ -921,13 +925,28 @@ async function runArena(games, { nameA, nameB, opening, seed = null, paintIt = t
   $("sb-b-name").textContent = `B · ${labelOf(nameB)}`;
   $("sb-a").textContent = $("sb-b").textContent = $("sb-d").textContent = "0";
   $("score-ci").textContent = "";
+  $("arena-time").textContent = "";
+  // thinking time per side: every decision each player made, opening random moves excluded
+  const clock = { A: { ms: 0, n: 0 }, B: { ms: 0, n: 0 } };
+  const showClock = () => {
+    const part = (side, name) => {
+      const c = clock[side];
+      return `${side} (${shortLabel(name)}) ${ms(c.ms)} in ${c.n} moves, ${ms(c.n ? c.ms / c.n : NaN)} per move`;
+    };
+    $("arena-time").textContent = `Thinking time: ${part("A", nameA)} · ${part("B", nameB)}.`;
+  };
   arenaRunning = true;
   let played = 0;
   for (let game = 1; game <= games && arenaRunning; game += 1) {
     const aFirst = game % 2 === 1; // alternate who opens (and plays red)
     setStatus(`Arena · game ${game} of ${games}`,
       `red: ${labelOf(aFirst ? nameA : nameB)} · yellow: ${labelOf(aFirst ? nameB : nameA)} · they swap every game`, "red");
-    const { result, line } = await oneArenaGame(aFirst ? playerA : playerB, aFirst ? playerB : playerA, opening, paintIt);
+    const onMove = (side, t) => {
+      const c = clock[(side === "X") === aFirst ? "A" : "B"];
+      c.ms += t;
+      c.n += 1;
+    };
+    const { result, line } = await oneArenaGame(aFirst ? playerA : playerB, aFirst ? playerB : playerA, opening, paintIt, onMove);
     lines.add(line);
     played = game;
     if (result === "draw") tally.draw += 1;
@@ -937,6 +956,7 @@ async function runArena(games, { nameA, nameB, opening, seed = null, paintIt = t
     $("sb-b").textContent = tally.B;
     $("sb-d").textContent = tally.draw;
     $("arena-progress").textContent = `${game} of ${games} games`;
+    showClock();
   }
   arenaRunning = false;
   rand = Math.random;
@@ -954,7 +974,8 @@ async function runArena(games, { nameA, nameB, opening, seed = null, paintIt = t
   $("again").textContent = "Play yourself";
   setCaption("The arena is over. Press “Play yourself” above to play against the AI.");
   setArenaLock(false);
-  const result = { nameA, nameB, games: played, opening, seed, ...tally, distinct: lines.size, score };
+  const result = { nameA, nameB, games: played, opening, seed, ...tally, distinct: lines.size, score,
+                   thinkingMs: { A: clock.A.ms, B: clock.B.ms }, moves: { A: clock.A.n, B: clock.B.n } };
   window.__arenaResult = result;
   return result;
 }
