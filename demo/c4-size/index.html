@@ -19,6 +19,7 @@
   h1 { font-size: 1.45rem; margin: 0 0 .3rem; letter-spacing: -.01em; }
   .lede { color: var(--muted); margin: 0; }
   .lede a { color: var(--accent); }
+  .lede + .lede { margin-top: .5rem; }
   .layout { max-width: 1120px; margin: 0 auto; display: grid; gap: 1.25rem;
             grid-template-columns: minmax(0, 560px) minmax(0, 1fr); align-items: start; }
   @media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
@@ -102,10 +103,11 @@
   <a href="https://github.com/precisit/onepass-webgpu">onepass-webgpu</a>, the runtime from the
   <a href="../c4-speed/">speed demo</a>; the code, results and models are in
   <a href="https://github.com/precisit/onepass-webgpu-ternary">onepass-webgpu-ternary</a> and on
-  <a href="https://huggingface.co/precisit/onepass-c4">Hugging Face</a>.
-  The story: <a href="https://precisit.com/en/blog/onepass-connect-four/" target="_blank" rel="noopener">Meet your one-pass AI opponent</a>
-  (the model) · <a href="https://precisit.com/en/blog/onepass-webgpu-speed/" target="_blank" rel="noopener">One millisecond to make a move</a>
-  (the speed).</p>
+  <a href="https://huggingface.co/precisit/onepass-c4">Hugging Face</a>.</p>
+  <p class="lede">The story:
+  <a href="https://precisit.com/en/blog/onepass-connect-four/" target="_blank" rel="noopener">Meet your one-pass AI opponent</a> (the model) ·
+  <a href="https://precisit.com/en/blog/onepass-webgpu-speed/" target="_blank" rel="noopener">One millisecond to make a move</a> (the speed) ·
+  <a href="https://precisit.com/en/blog/onepass-c4-size/" target="_blank" rel="noopener">A game-playing AI in 1.6 MB</a> (the size).</p>
 </header>
 <main class="layout">
   <section class="game">
