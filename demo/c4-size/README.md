@@ -1,5 +1,8 @@
 # demo/c4-size: a smaller AI in your browser (Size)
 
+The story behind the ternary model: [A game-playing AI in 1.6 MB](https://precisit.com/en/blog/onepass-c4-size/)
+(also [in Swedish](https://precisit.com/blog/onepass-c4-size/)).
+
 The Connect Four model with **ternary weights**: -1, 0 or +1 times one scale per 128 weights. It plays next to the
 dense model, the first model and a perfect solver, all in the browser on
 [onepass-webgpu](https://github.com/precisit/onepass-webgpu) (the solver on WebAssembly).
